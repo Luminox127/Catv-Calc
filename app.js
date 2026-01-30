@@ -283,7 +283,9 @@ if ("serviceWorker" in navigator) {
   $("internalPick").value = "DC-12";
   $("fieldPick").value = "2-way splitter";
   $("inlineTapVal").value = "11";
-
+  
+  bind();
   loadState();
   renderLists();
 })();
+
