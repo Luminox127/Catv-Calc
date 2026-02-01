@@ -1,3 +1,4 @@
+
 :root{
   --bg:#0b0b0c;
   --card:#131316;
@@ -5,6 +6,17 @@
   --text:#f1f3f4;
   --line:#26262b;
   --btn:#2c2c32;
+  --btn2:#17171c;
+}
+
+body.night{
+  --bg:#000;
+  --card:#0b0b0c;
+  --muted:#8a8f96;
+  --text:#e8eaed;
+  --line:#1d1d22;
+  --btn:#1f1f25;
+  --btn2:#0f0f12;
 }
 
 *{ box-sizing:border-box; }
@@ -24,12 +36,12 @@ body{
   border-bottom:1px solid var(--line);
 }
 
-.title{ font-size:18px; font-weight:700; }
+.title{ font-size:18px; font-weight:800; }
 .subtitle{ font-size:12px; color:var(--muted); margin-top:2px; }
 
 .container{
   padding:14px;
-  max-width:760px;
+  max-width:860px;
   margin:0 auto;
 }
 
@@ -42,7 +54,7 @@ body{
 }
 
 .sectionTitle{
-  font-weight:700;
+  font-weight:800;
   margin-bottom:10px;
 }
 
@@ -66,10 +78,10 @@ label{
 
 input, select{
   width:100%;
-  padding:10px 12px;
-  border-radius:10px;
+  padding:14px 14px;       /* glove-friendly */
+  border-radius:12px;
   border:1px solid var(--line);
-  background:#0f0f12;
+  background:var(--btn2);
   color:var(--text);
   font-size:16px;
   outline:none;
@@ -78,17 +90,18 @@ input, select{
 .btnRow{
   display:flex;
   gap:10px;
-  align-items:end;
+  align-items:center;
   justify-content:flex-start;
+  flex-wrap:wrap;
 }
 
 .btn{
   border:1px solid var(--line);
   background:var(--btn);
   color:var(--text);
-  padding:10px 12px;
-  border-radius:12px;
-  font-weight:700;
+  padding:14px 14px;       /* glove-friendly */
+  border-radius:14px;
+  font-weight:800;
   cursor:pointer;
 }
 
@@ -97,9 +110,9 @@ input, select{
 }
 
 .btnBig{
-  width:100%;
-  padding:14px 14px;
+  padding:16px 16px;
   font-size:16px;
+  min-width: 220px;
 }
 
 .stack{
@@ -111,7 +124,6 @@ input, select{
 .stackList{
   white-space:pre-line;
   font-size:13px;
-  color:var(--text);
   margin-bottom:8px;
 }
 
@@ -122,14 +134,19 @@ input, select{
 
 .results{
   margin:12px 0 0;
-  background:#0f0f12;
+  background:var(--btn2);
   border:1px solid var(--line);
   border-radius:12px;
   padding:12px;
-  min-height:160px;
+  min-height:180px;
   overflow:auto;
   font-size:13px;
   line-height:1.35;
+  white-space:pre-wrap;
+}
+
+.results.small{
+  min-height:120px;
 }
 
 .hint{
@@ -137,6 +154,22 @@ input, select{
   color:var(--muted);
   font-size:12px;
 }
+
+.tiny{
+  font-size:12px;
+  color:var(--muted);
+  margin-top:6px;
+}
+
+.checkRow{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  margin-top:8px;
+}
+.checkRow input{ width:22px; height:22px; }
+.checkLabel{ margin:0; font-size:13px; color:var(--text); }
+
 @media (max-width: 520px){
   .grid2{ grid-template-columns: 1fr; }
 }
