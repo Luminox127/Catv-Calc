@@ -566,4 +566,114 @@ if ("serviceWorker" in navigator) {
 
   renderLists();
 })();
+// ===========================
+// BOOT SCREEN + PIP-BOY SOUND
+// ===========================
+
+function pipboyStartupSound(){
+  // iOS requires user interaction; this runs on START tap.
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return;
+
+  const ctx = new AudioCtx();
+  const now = ctx.currentTime;
+
+  const master = ctx.createGain();
+  master.gain.setValueAtTime(0.0, now);
+  master.gain.linearRampToValueAtTime(0.18, now + 0.02);
+  master.gain.exponentialRampToValueAtTime(0.0001, now + 0.75);
+  master.connect(ctx.destination);
+
+  // helper to make a "chirp"
+  function chirp(startT, f0, f1, dur){
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "square"; // crunchy pip-boy vibe
+    o.frequency.setValueAtTime(f0, startT);
+    o.frequency.exponentialRampToValueAtTime(f1, startT + dur);
+    g.gain.setValueAtTime(0.0001, startT);
+    g.gain.exponentialRampToValueAtTime(0.6, startT + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, startT + dur);
+
+    o.connect(g);
+    g.connect(master);
+    o.start(startT);
+    o.stop(startT + dur);
+  }
+
+  // 3-part “pip-boy-ish” startup sequence
+  chirp(now + 0.00, 520, 880, 0.10);
+  chirp(now + 0.14, 420, 700, 0.12);
+  chirp(now + 0.30, 620, 980, 0.14);
+
+  // tiny low thump
+  const o2 = ctx.createOscillator();
+  const g2 = ctx.createGain();
+  o2.type = "sine";
+  o2.frequency.setValueAtTime(90, now + 0.06);
+  g2.gain.setValueAtTime(0.0001, now + 0.06);
+  g2.gain.exponentialRampToValueAtTime(0.25, now + 0.08);
+  g2.gain.exponentialRampToValueAtTime(0.0001, now + 0.20);
+  o2.connect(g2); g2.connect(master);
+  o2.start(now + 0.06);
+  o2.stop(now + 0.22);
+
+  // close ctx later
+  setTimeout(() => { try { ctx.close(); } catch {} }, 1200);
+}
+
+function startBoot(){
+  const boot = document.getElementById("boot");
+  const linesEl = document.getElementById("bootLines");
+  const barEl = document.getElementById("bootBar");
+  const startBtn = document.getElementById("bootStart");
+  if (!boot || !linesEl || !barEl || !startBtn) return;
+
+  // build fake terminal lines
+  const script = [
+    "FVG INDUSTRIES (TM)",
+    "--------------------------------",
+    "CATV CALC INITIALIZING....",
+    "",
+    "LOADING LOSS TABLES............. OK",
+    "LOADING TAP MODELS.............. OK",
+    "LOADING UI MODULES.............. OK",
+    "CHECKING OFFLINE CACHE.......... OK",
+    "",
+    "READY."
+  ];
+
+  let i = 0;
+  linesEl.textContent = "";
+  barEl.style.width = "0%";
+  startBtn.disabled = true;
+  startBtn.textContent = "INITIALIZING...";
+
+  // typewriter effect
+  const typeTimer = setInterval(() => {
+    if (i < script.length){
+      linesEl.textContent += (i === 0 ? "" : "\n") + script[i];
+      i++;
+      const pct = Math.min(92, Math.round((i / script.length) * 100));
+      barEl.style.width = pct + "%";
+    } else {
+      clearInterval(typeTimer);
+      barEl.style.width = "100%";
+      startBtn.disabled = false;
+      startBtn.textContent = "START";
+    }
+  }, 140);
+
+  startBtn.addEventListener("click", () => {
+    // play sound (allowed because user tapped)
+    pipboyStartupSound();
+
+    // hide boot screen
+    boot.style.display = "none";
+  }, { once: true });
+}
+
+// Run boot on load
+window.addEventListener("load", startBoot);
+
 
