@@ -1,63 +1,117 @@
-
 :root{
-  --bg:#0b0b0c;
-  --card:#131316;
-  --muted:#9aa0a6;
-  --text:#f1f3f4;
-  --line:#26262b;
-  --btn:#2c2c32;
-  --btn2:#17171c;
-}
-
-body.night{
-  --bg:#000;
-  --card:#0b0b0c;
-  --muted:#8a8f96;
-  --text:#e8eaed;
-  --line:#1d1d22;
-  --btn:#1f1f25;
-  --btn2:#0f0f12;
+  --bg:#050402;
+  --card:rgba(12, 10, 6, 0.85);
+  --muted:#ffd79a;
+  --text:#ffe6bf;
+  --line:rgba(255, 191, 105, .28);
+  --btn:rgba(38, 28, 14, 0.70);
+  --btn2:rgba(18, 14, 8, 0.70);
+  --glow:rgba(255, 191, 105, .35);
+  --glow2:rgba(255, 191, 105, .18);
 }
 
 *{ box-sizing:border-box; }
+html, body{ height:100%; }
+
 body{
   margin:0;
-  background:var(--bg);
+  background:
+    radial-gradient(1200px 700px at 20% 0%, rgba(255,191,105,.08), transparent 62%),
+    radial-gradient(900px 600px at 90% 20%, rgba(255,140,60,.06), transparent 60%),
+    linear-gradient(#040301, #050402);
   color:var(--text);
-  font-family:-apple-system, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  letter-spacing: .2px;
+  text-shadow: 0 0 10px rgba(255,191,105,.12);
 }
 
+/* CRT overlay */
+#crt{
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    /* scanlines */
+    repeating-linear-gradient(
+      to bottom,
+      rgba(255,191,105,0.045) 0px,
+      rgba(255,191,105,0.045) 1px,
+      rgba(0,0,0,0.00) 3px,
+      rgba(0,0,0,0.00) 6px
+    ),
+    /* vignette */
+    radial-gradient(circle at 50% 50%, rgba(0,0,0,0) 55%, rgba(0,0,0,.38) 100%);
+  opacity: .65;
+}
+
+/* subtle flicker */
+@keyframes flicker{
+  0%{ opacity:.62; }
+  3%{ opacity:.70; }
+  6%{ opacity:.60; }
+  10%{ opacity:.66; }
+  100%{ opacity:.64; }
+}
+#crt{ animation: flicker 6s infinite; }
+
+/* Topbar */
 .topbar{
-  padding:18px 16px 10px;
-  position:sticky;
-  top:0;
-  background:linear-gradient(to bottom, rgba(11,11,12,.98), rgba(11,11,12,.88));
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding:16px 16px 10px;
+  background: linear-gradient(to bottom, rgba(5,4,2,.92), rgba(5,4,2,.60));
   backdrop-filter: blur(10px);
-  border-bottom:1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 0 20px rgba(255,191,105,.12);
 }
 
-.title{ font-size:18px; font-weight:800; }
-.subtitle{ font-size:12px; color:var(--muted); margin-top:2px; }
+.title{
+  font-size:16px;
+  font-weight:900;
+  text-transform: uppercase;
+  color: var(--text);
+  text-shadow: 0 0 12px var(--glow);
+}
+.subtitle{
+  font-size:12px;
+  color:rgba(255,215,154,.88);
+  margin-top:4px;
+}
 
+/* Layout */
 .container{
+  position: relative;
+  z-index: 1;
   padding:14px;
-  max-width:860px;
+  max-width:900px;
   margin:0 auto;
 }
 
+/* Cards */
 .card{
-  background:var(--card);
-  border:1px solid var(--line);
-  border-radius:14px;
-  padding:14px;
-  margin:12px 0;
+  background: linear-gradient(180deg, rgba(12,10,6,.88), rgba(10,8,5,.78));
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  margin: 12px 0;
+  box-shadow:
+    0 0 0 1px rgba(255,191,105,.06) inset,
+    0 14px 34px rgba(0,0,0,.42);
 }
 
 .sectionTitle{
-  font-weight:800;
+  font-weight:900;
   margin-bottom:10px;
+  text-transform: uppercase;
+  font-size: 13px;
+  color: rgba(255,215,154,.95);
+  text-shadow: 0 0 12px rgba(255,191,105,.16);
+  letter-spacing: .6px;
 }
 
+/* Inputs */
 .row{
   display:flex;
   flex-direction:column;
@@ -73,20 +127,27 @@ body{
 
 label{
   font-size:12px;
-  color:var(--muted);
+  color: rgba(255,215,154,.86);
 }
 
 input, select{
   width:100%;
   padding:14px 14px;       /* glove-friendly */
   border-radius:12px;
-  border:1px solid var(--line);
-  background:var(--btn2);
-  color:var(--text);
-  font-size:16px;
-  outline:none;
+  border:1px solid rgba(255,191,105,.28);
+  background: rgba(16, 12, 7, 0.70);
+  color: var(--text);
+  font-size: 15px;
+  outline: none;
+  box-shadow: 0 0 0 1px rgba(255,191,105,.07) inset;
 }
 
+input:focus, select:focus{
+  border-color: rgba(255,191,105,.62);
+  box-shadow: 0 0 0 3px rgba(255,191,105,.18);
+}
+
+/* Buttons */
 .btnRow{
   display:flex;
   gap:10px;
@@ -96,46 +157,55 @@ input, select{
 }
 
 .btn{
-  border:1px solid var(--line);
-  background:var(--btn);
-  color:var(--text);
-  padding:14px 14px;       /* glove-friendly */
-  border-radius:14px;
-  font-weight:800;
-  cursor:pointer;
+  border:1px solid rgba(255,191,105,.30);
+  background: linear-gradient(180deg, rgba(52, 38, 18, .72), rgba(26, 19, 10, .62));
+  color: var(--text);
+  padding: 14px 14px;       /* glove-friendly */
+  border-radius: 14px;
+  font-weight: 900;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  box-shadow:
+    0 0 0 1px rgba(255,191,105,.06) inset,
+    0 0 18px rgba(255,191,105,.12);
 }
 
-.btnGhost{
-  background:transparent;
+.btn:hover{
+  box-shadow:
+    0 0 0 1px rgba(255,191,105,.10) inset,
+    0 0 28px rgba(255,191,105,.18);
 }
+
+.btnGhost{ background: transparent; }
 
 .btnBig{
-  padding:16px 16px;
-  font-size:16px;
+  padding: 16px 16px;
+  font-size: 15px;
   min-width: 220px;
 }
 
+/* Lists & totals */
 .stack{
   margin-top:8px;
   padding-top:10px;
-  border-top:1px dashed var(--line);
+  border-top:1px dashed rgba(255,191,105,.25);
 }
-
 .stackList{
   white-space:pre-line;
   font-size:13px;
   margin-bottom:8px;
 }
-
 .totals{
   font-size:12px;
-  color:var(--muted);
+  color: rgba(255,215,154,.78);
 }
 
+/* Results */
 .results{
   margin:12px 0 0;
-  background:var(--btn2);
-  border:1px solid var(--line);
+  background: rgba(10, 8, 5, 0.72);
+  border:1px solid rgba(255,191,105,.24);
   border-radius:12px;
   padding:12px;
   min-height:180px;
@@ -143,22 +213,15 @@ input, select{
   font-size:13px;
   line-height:1.35;
   white-space:pre-wrap;
+  box-shadow: 0 0 0 1px rgba(255,191,105,.06) inset;
 }
 
-.results.small{
-  min-height:120px;
-}
+.results.small{ min-height:120px; }
 
-.hint{
+.hint, .tiny{
   margin-top:10px;
-  color:var(--muted);
+  color: rgba(255,215,154,.75);
   font-size:12px;
-}
-
-.tiny{
-  font-size:12px;
-  color:var(--muted);
-  margin-top:6px;
 }
 
 .checkRow{
@@ -173,3 +236,4 @@ input, select{
 @media (max-width: 520px){
   .grid2{ grid-template-columns: 1fr; }
 }
+
