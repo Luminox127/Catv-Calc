@@ -1,26 +1,23 @@
-const CACHE_NAME = "catv-calc-cache-v1";
+const CACHE_NAME = "catv-calc-cache-v3";
 const ASSETS = [
   "./",
   "./index.html",
   "./style.css",
   "./app.js",
   "./manifest.json",
+  "./sw.js",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
-  );
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.map(k => (k === CACHE_NAME ? null : caches.delete(k))))
-    )
+    caches.keys().then(keys => Promise.all(keys.map(k => (k === CACHE_NAME ? null : caches.delete(k)))))
   );
   self.clients.claim();
 });
@@ -30,3 +27,5 @@ self.addEventListener("fetch", (event) => {
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );
 });
+
+
