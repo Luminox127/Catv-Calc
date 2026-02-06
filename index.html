@@ -1,13 +1,12 @@
-
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b0b0c" />
+  <meta name="theme-color" content="#050402" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>CATV Calc</title>
+  <title>CATV CALC</title>
 
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="style.css" />
@@ -15,261 +14,65 @@
 </head>
 
 <body>
+  <!-- CRT overlay -->
   <div id="crt"></div>
+
+  <!-- BOOT -->
   <div id="boot" class="boot">
-  <div class="boot-inner">
-    <div class="boot-title">FVG INDUSTRIES (TM)</div>
-    <div class="boot-lines" id="bootLines">
-      CATV CALC INITIALIZING....
-    </div>
+    <div class="boot-inner">
+      <div class="boot-title">FVG INDUSTRIES (TM)</div>
+      <div class="boot-lines" id="bootLines"></div>
 
-    <div class="boot-progress">
-      <div class="boot-bar" id="bootBar"></div>
-    </div>
+      <div class="boot-progress">
+        <div class="boot-bar" id="bootBar"></div>
+      </div>
 
-    <button id="bootStart" class="btn boot-btn">START</button>
-    <div class="boot-hint">Tap START to continue .</div>
+      <button id="bootStart" class="btn boot-btn">START</button>
+      <div class="boot-hint">Tap START to continue (enables sound on iPhone).</div>
+    </div>
   </div>
-</div>
+
   <header class="topbar">
-    <div class="title">CATV Signal Loss Calculator</div>
-    <div class="subtitle">Home Screen App • v3</div>
+    <div class="title">CATV SIGNAL DIAGNOSTICS TERMINAL</div>
+    <div class="subtitle">FVG-77A-CATV • vQ1</div>
   </header>
 
   <main class="container">
-    <!-- CORE INPUTS -->
+    <!-- TERMINAL LOG -->
     <section class="card">
-      <div class="sectionTitle">Core Inputs</div>
-
-      <div class="grid2">
-        <div class="row">
-          <label>Mode</label>
-          <select id="mode">
-            <option value="AT_TAP">Meter is AT current tap</option>
-            <option value="UPSTREAM">Meter is UPSTREAM start level</option>
-          </select>
-        </div>
-
-        <div class="row">
-          <label>Band</label>
-          <select id="band">
-            <option value="LOW">LOW (250 MHz)</option>
-            <option value="HIGH">HIGH (1000 MHz)</option>
-          </select>
-          <div class="tiny">Frequency: <span id="freqLabel">250</span> MHz</div>
-        </div>
-      </div>
-
-      <div class="grid2">
-        <div class="row">
-          <label>Meter @ 250 (dBmV)</label>
-          <input id="meter250" inputmode="decimal" value="34.5" />
-        </div>
-        <div class="row">
-          <label>Meter @ 1000 (dBmV)</label>
-          <input id="meter1000" inputmode="decimal" value="41" />
-        </div>
-      </div>
-
-      <div class="grid2">
-        <div class="row">
-          <label>Meter pad (dB)</label>
-          <input id="pad" inputmode="decimal" value="20" />
-        </div>
-        <div class="row">
-          <label>Pad handling</label>
-          <div class="checkRow">
-            <input type="checkbox" id="padComp" />
-            <label for="padComp" class="checkLabel">Meter already compensates for pad</label>
-          </div>
-          <div class="tiny">If checked, pad is not subtracted (prevents double-pad).</div>
-        </div>
-      </div>
-
-      <div class="grid2">
-        <div class="row">
-          <label>Cable type</label>
-          <select id="cable"></select>
-        </div>
-        <div class="row">
-          <label>Length (ft)</label>
-          <input id="length" inputmode="decimal" value="814" />
-        </div>
-      </div>
-
-      <div class="grid2">
-        <div class="row">
-          <label>Current tap value (dB)</label>
-          <input id="tapVal" inputmode="decimal" value="4" />
-        </div>
-        <div class="row">
-          <label>Tap THRU loss (dB)</label>
-          <input id="tapThru" inputmode="decimal" value="1.5" />
-          <div class="checkRow">
-            <input type="checkbox" id="tapThruAuto" checked />
-            <label for="tapThruAuto" class="checkLabel">Auto-fill tap THRU by tap value</label>
-          </div>
-        </div>
+      <div class="sectionTitle">TERMINAL OUTPUT</div>
+      <pre class="terminal" id="log"></pre>
+      <div class="btnRow">
+        <button class="btn btnGhost" id="copyLog">COPY LOG</button>
+        <button class="btn btnGhost" id="shareLog">SHARE SNAPSHOT</button>
+        <button class="btn btnGhost" id="resetAll">RESET</button>
       </div>
     </section>
 
-    <!-- INTERNAL DEVICES -->
+    <!-- QUESTIONNAIRE -->
     <section class="card">
-      <div class="sectionTitle">Internal (mini-bridger)</div>
-      <div class="grid2">
-        <div class="row">
-          <label>Internal device</label>
-          <select id="internalPick"></select>
-        </div>
-        <div class="row btnRow">
-          <button id="addInternal" class="btn">Add</button>
-          <button id="clearInternal" class="btn btnGhost">Clear</button>
-        </div>
+      <div class="sectionTitle">QUESTIONNAIRE</div>
+
+      <div class="qTitle" id="qTitle"></div>
+      <div class="qHint" id="qHint"></div>
+
+      <!-- Dynamic question body -->
+      <div id="qBody"></div>
+
+      <div class="btnRow">
+        <button class="btn btnGhost" id="backBtn">BACK</button>
+        <button class="btn" id="nextBtn">NEXT</button>
       </div>
-      <div class="stack">
-        <div class="stackList" id="internalList">(none)</div>
-        <div class="totals">Internal total: <span id="internalTotal">0.00</span> dB</div>
-      </div>
+
+      <div class="tiny" id="stepLabel"></div>
     </section>
 
-    <!-- FIELD DEVICES -->
+    <!-- RESULTS -->
     <section class="card">
-      <div class="sectionTitle">Field devices</div>
-      <div class="grid2">
-        <div class="row">
-          <label>Field device</label>
-          <select id="fieldPick"></select>
-        </div>
-        <div class="row btnRow">
-          <button id="addField" class="btn">Add</button>
-          <button id="clearField" class="btn btnGhost">Clear</button>
-        </div>
-      </div>
-      <div class="stack">
-        <div class="stackList" id="fieldList">(none)</div>
-        <div class="totals">Field total: <span id="fieldTotal">0.00</span> dB</div>
-      </div>
-    </section>
-
-    <!-- INLINE TAPS -->
-    <section class="card">
-      <div class="sectionTitle">Inline taps (THRU path)</div>
-      <div class="grid2">
-        <div class="row">
-          <label>Inline tap value</label>
-          <select id="inlineTapVal"></select>
-        </div>
-        <div class="row">
-          <label>Inline tap THRU loss (dB)</label>
-          <input id="inlineTapThru" inputmode="decimal" value="1.5" />
-          <div class="checkRow">
-            <input type="checkbox" id="inlineThruAuto" checked />
-            <label for="inlineThruAuto" class="checkLabel">Auto-fill inline THRU by tap value</label>
-          </div>
-        </div>
-      </div>
-      <div class="row btnRow">
-        <button id="addInline" class="btn">Add inline tap</button>
-        <button id="clearInline" class="btn btnGhost">Clear inline taps</button>
-      </div>
-
-      <div class="stack">
-        <div class="stackList" id="inlineList">(none)</div>
-        <div class="totals">Inline taps THRU total: <span id="inlineTotal">0.00</span> dB</div>
-      </div>
-    </section>
-
-    <!-- TILT / SLOPE -->
-    <section class="card">
-      <div class="sectionTitle">Tilt / Slope</div>
-      <div class="tiny">Uses Meter@250 and Meter@1000 after pad handling.</div>
-      <div class="row btnRow">
-        <button id="tiltBtn" class="btn">Compute tilt</button>
-      </div>
-      <pre class="results small" id="tiltOut">Tap “Compute tilt”</pre>
-    </section>
-
-    <!-- TAP CHAIN OPTIMIZER -->
-    <section class="card">
-      <div class="sectionTitle">Tap Chain Optimizer (quick suggestion)</div>
-      <div class="tiny">Given a starting THRU level and a target port level, suggests tap values down the line (greedy).</div>
-
-      <div class="grid2">
-        <div class="row">
-          <label>Start THRU level (dBmV)</label>
-          <input id="optStart" inputmode="decimal" value="30" />
-        </div>
-        <div class="row">
-          <label>Target port level (dBmV)</label>
-          <input id="optTarget" inputmode="decimal" value="2" />
-        </div>
-      </div>
-
-      <div class="grid2">
-        <div class="row">
-          <label>Number of taps</label>
-          <input id="optCount" inputmode="numeric" value="6" />
-        </div>
-        <div class="row">
-          <label>Use THRU loss per tap (dB)</label>
-          <input id="optThru" inputmode="decimal" value="1.5" />
-        </div>
-      </div>
-
-      <div class="row btnRow">
-        <button id="optBtn" class="btn">Suggest chain</button>
-      </div>
-      <pre class="results small" id="optOut">Tap “Suggest chain”</pre>
-    </section>
-
-    <!-- FREQUENCY SWEEP -->
-    <section class="card">
-      <div class="sectionTitle">Frequency Sweep (estimate)</div>
-      <div class="tiny">Shows estimated cable loss across common freqs. Exact table is only 250/1000; others are log-interpolated estimates.</div>
-      <div class="row btnRow">
-        <button id="sweepBtn" class="btn">Build sweep</button>
-      </div>
-      <pre class="results small" id="sweepOut">Tap “Build sweep”</pre>
-    </section>
-
-    <!-- UPSTREAM (RETURN) ESTIMATE -->
-    <section class="card">
-      <div class="sectionTitle">Upstream / Return Estimate (simple)</div>
-      <div class="tiny">Estimates return-path loss and required TX. This is a simplified model (same losses both directions).</div>
-
-      <div class="grid2">
-        <div class="row">
-          <label>Return frequency (MHz)</label>
-          <input id="retFreq" inputmode="decimal" value="42" />
-        </div>
-        <div class="row">
-          <label>Target at headend (dBmV)</label>
-          <input id="retTarget" inputmode="decimal" value="0" />
-        </div>
-      </div>
-
-      <div class="row btnRow">
-        <button id="retBtn" class="btn">Compute return</button>
-      </div>
-      <pre class="results small" id="retOut">Tap “Compute return”</pre>
-    </section>
-
-    <!-- CALC + SHARE -->
-    <section class="card">
-      <div class="row btnRow">
-        <button id="calcBtn" class="btn btnBig">CALCULATE</button>
-        <button id="copyBtn" class="btn btnGhost">Copy results</button>
-      </div>
-
-      <pre class="results" id="results">Enter values then tap CALCULATE.</pre>
-
-      <div class="row btnRow">
-        <button id="shareBtn" class="btn btnGhost">Share snapshot</button>
-        <button id="nightBtn" class="btn btnGhost">Toggle night mode</button>
-      </div>
-
-      <div class="hint">
-        Offline tip: After updates, service-worker cache auto-refreshes (v3). If weird, reload once.
+      <div class="sectionTitle">SIGNAL ANALYSIS</div>
+      <pre class="terminal" id="results">Complete the questionnaire, then results will appear here.</pre>
+      <div class="btnRow">
+        <button class="btn" id="calcBtn">RUN ANALYSIS</button>
       </div>
     </section>
   </main>
@@ -277,6 +80,3 @@
   <script src="app.js"></script>
 </body>
 </html>
-
-
-
