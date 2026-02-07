@@ -17,42 +17,53 @@
 <body>
   <div id="crt"></div>
 
-  <!-- BOOT -->
+  <!-- Boot -->
   <div id="boot" class="boot">
     <div class="boot-box">
       <pre id="bootText" class="terminal"></pre>
-      <div class="boot-row">
-        <button id="bootBtn" class="btn">START</button>
-      </div>
-      <div class="hint">Tap START to begin (required for sound on iPhone).</div>
+      <button id="bootBtn" class="btn big">START</button>
+      <div class="hint">Tap START (required for sound on iPhone).</div>
     </div>
   </div>
 
   <header class="topbar">
-    <div class="title">FVG INDUSTRIES (TM) • CATV SIGNAL DIAGNOSTICS TERMINAL</div>
-    <div class="subtitle">TERMINAL ID: FVG-77A-CATV • MODE: QUESTIONNAIRE</div>
+    <div class="title">FVG INDUSTRIES (TM) • CATV CALC TERMINAL</div>
+    <div class="subtitle" id="subtitle">MODE: WIZARD</div>
   </header>
 
   <main class="wrap">
     <section class="panel">
-      <div class="panelTitle">TERMINAL OUTPUT</div>
-      <pre id="out" class="terminal"></pre>
 
-      <div id="quick" class="quick"></div>
+      <!-- Wizard Card -->
+      <div id="card" class="card">
+        <div class="cardTitle" id="qTitle">QUESTION</div>
+        <div class="cardHint" id="qHint"></div>
 
-      <div class="inputRow">
-        <span class="prompt">&gt;</span>
-        <input id="in" class="input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="type answer then hit Enter" />
+        <!-- Options grid -->
+        <div id="options" class="options"></div>
+
+        <!-- Numeric input (only when needed) -->
+        <div id="numWrap" class="numWrap hidden">
+          <div class="numRow">
+            <span class="prompt">&gt;</span>
+            <input id="numInput" class="numInput" inputmode="decimal" type="number" step="any" />
+          </div>
+          <div class="numBtns">
+            <button id="numOk" class="btn">OK</button>
+            <button id="numCancel" class="btn ghost">CANCEL</button>
+          </div>
+        </div>
+
+        <div class="cardFooter">
+          <button id="backBtn" class="btn ghost">BACK</button>
+          <button id="resetBtn" class="btn ghost">RESET</button>
+          <button id="resultsBtn" class="btn">RESULTS</button>
+        </div>
       </div>
 
-      <div class="btnRow">
-        <button id="backBtn" class="btn ghost">BACK</button>
-        <button id="resetBtn" class="btn ghost">RESET</button>
-        <button id="runBtn" class="btn">RUN ANALYSIS</button>
-        <button id="copyBtn" class="btn ghost">COPY</button>
-      </div>
+      <!-- Results -->
+      <pre id="results" class="terminal results hidden"></pre>
 
-      <div class="hint" id="stepHint"></div>
     </section>
   </main>
 
