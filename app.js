@@ -1,18 +1,14 @@
 // ============================================================
-// FVG INDUSTRIES (TM) — CATV CALC TERMINAL (Tap-Only Wizard)
-// - One question card at a time
-// - Click/tap options (no typing for cables/devices/taps)
-// - Numeric keypad only for numbers
+// CATV CALC — 2026 UI Wizard (Dual-band auto-calc)
+// - No choosing 250/1000; results show both
+// - Tap-only picks for cable/devices/taps
 // - Mixed cable segments
-// - Inline taps: THRU loss subtracted correctly + port outputs
-// - iPhone-safe START (touchend + click)
+// - Inline tap THRU subtraction correct
 // ============================================================
 
 const boot = document.getElementById("boot");
-const bootText = document.getElementById("bootText");
 const bootBtn = document.getElementById("bootBtn");
-
-const subtitle = document.getElementById("subtitle");
+const bootDots = document.getElementById("bootDots");
 
 const qTitle = document.getElementById("qTitle");
 const qHint  = document.getElementById("qHint");
@@ -24,12 +20,16 @@ const numOk = document.getElementById("numOk");
 const numCancel = document.getElementById("numCancel");
 
 const backBtn = document.getElementById("backBtn");
-const resetBtn = document.getElementById("resetBtn");
 const resultsBtn = document.getElementById("resultsBtn");
 
-const resultsEl = document.getElementById("results");
+const resultsBtnTop = document.getElementById("resultsBtnTop");
+const resetBtnTop = document.getElementById("resetBtnTop");
 
-const STORAGE_KEY = "catv_wizard_state_v2";
+const resultsWrap = document.getElementById("resultsWrap");
+const resLow = document.getElementById("resLow");
+const resHigh = document.getElementById("resHigh");
+
+const STORAGE_KEY = "catv_calc_2026_v1";
 
 // ---------- Loss tables (dB per 100ft) ----------
 const LOSS_PER_100FT = {
@@ -43,7 +43,6 @@ const LOSS_PER_100FT = {
   "P3-875": {250: 0.72, 1000: 1.53}
 };
 
-// Inline tap defaults (thru) — you can adjust as you learn your plant
 const DEFAULT_TAP_THRU = {
   4: 1.2, 8: 1.4, 11: 1.5, 14: 1.6, 17: 1.7, 20: 1.8, 23: 1.9, 26: 2.0, 29: 2.1
 };
@@ -73,8 +72,7 @@ const FIELD_DEVICES = [
   {name:"DC-12", loss:12.0}
 ];
 
-const INLINE_TAP_VALUES = [4,8,11,14,17,20,23,26,29];
-const CURRENT_TAP_VALUES = [4,8,11,14,17,20,23,26,29];
+const TAP_VALUES = [4,8,11,14,17,20,23,26,29];
 
 // ---------- Utils ----------
 function f2(x){ return Number.isFinite(x) ? x.toFixed(2) : "0.00"; }
@@ -82,75 +80,71 @@ function n(x, fallback=0){
   const v = parseFloat(String(x).trim());
   return Number.isFinite(v) ? v : fallback;
 }
-function freqFromBand(b){ return b === "HIGH" ? 1000 : 250; }
-function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
-
-function save(){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
+function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 function load(){
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return;
-  try{
-    const s = JSON.parse(raw);
-    state = {...state, ...s};
-  }catch{}
+  try{ state = {...state, ...JSON.parse(raw)}; }catch{}
 }
 
-function resetAll(){
-  localStorage.removeItem(STORAGE_KEY);
-  state = defaultState();
-  historyStack = [];
-  resultsEl.classList.add("hidden");
-  render();
-}
-
-// ---------- App state ----------
 function defaultState(){
   return {
-    band: "LOW",          // LOW=250 / HIGH=1000
-    mode: "AT_TAP",       // AT_TAP or UPSTREAM
+    // meter inputs
     meter250: 34.5,
     meter1000: 41.0,
     pad: 20.0,
     padComp: false,
 
-    segments: [],         // [{cable, ft}]
-    inlineTaps: [],       // [{value, thru}]
-    internal: [],         // [{name, loss}]
-    field: [],            // [{name, loss}]
+    // where reading is taken
+    mode: "AT_TAP", // AT_TAP or UPSTREAM
 
+    // topology
+    segments: [],   // [{cable, ft}]
+    inlineTaps: [], // [{value, thru}]
+    internal: [],   // [{name, loss}]
+    field: [],      // [{name, loss}]
+
+    // current tap
     currentTapValue: 4,
     currentTapThru: 1.5
   };
 }
 
 let state = defaultState();
-
-// We keep a stack of wizard “screens” for BACK
+let screen = "MODE";
 let historyStack = [];
-let screen = "BAND";
-
-// numeric input callback
 let pendingNumber = null;
+const temp = {};
 
-// ---------- Wizard screen renderer ----------
+function resetAll(){
+  localStorage.removeItem(STORAGE_KEY);
+  state = defaultState();
+  screen = "MODE";
+  historyStack = [];
+  resultsWrap.classList.add("hidden");
+  render();
+}
+
+// ---------- UI helpers ----------
 function setScreen(next){
   historyStack.push(screen);
   screen = next;
-  resultsEl.classList.add("hidden");
+  resultsWrap.classList.add("hidden");
   render();
 }
-
 function back(){
   if (!historyStack.length) return;
   screen = historyStack.pop();
-  resultsEl.classList.add("hidden");
+  resultsWrap.classList.add("hidden");
   render();
 }
 
-function showNumber(promptTitle, hint, initial, onOk){
-  qTitle.textContent = promptTitle;
+function hideNumber(){
+  numWrap.classList.add("hidden");
+  pendingNumber = null;
+}
+function showNumber(title, hint, initial, onOk){
+  qTitle.textContent = title;
   qHint.textContent = hint || "";
   optionsEl.innerHTML = "";
   numWrap.classList.remove("hidden");
@@ -159,9 +153,14 @@ function showNumber(promptTitle, hint, initial, onOk){
   setTimeout(() => numInput.focus(), 50);
 }
 
-function hideNumber(){
-  numWrap.classList.add("hidden");
-  pendingNumber = null;
+function optButton(label, sub, onPick){
+  const b = document.createElement("button");
+  b.className = "opt";
+  b.innerHTML = `<div class="optTitle">${label}</div>${sub ? `<div class="optSub">${sub}</div>`:""}`;
+  const handler = (e)=>{ e.preventDefault(); onPick(); };
+  b.addEventListener("touchend", handler, {passive:false});
+  b.addEventListener("click", handler);
+  return b;
 }
 
 function setOptions(title, hint, opts){
@@ -169,308 +168,30 @@ function setOptions(title, hint, opts){
   qHint.textContent = hint || "";
   hideNumber();
   optionsEl.innerHTML = "";
-
-  opts.forEach(o => {
-    const btn = document.createElement("button");
-    btn.className = "opt";
-    btn.innerHTML = `${o.label}${o.sub ? `<small>${o.sub}</small>` : ""}`;
-
-    const handler = (e) => { e.preventDefault(); o.onPick(); };
-    btn.addEventListener("touchend", handler, {passive:false});
-    btn.addEventListener("click", handler);
-
-    optionsEl.appendChild(btn);
-  });
+  opts.forEach(o => optionsEl.appendChild(optButton(o.label, o.sub, o.onPick)));
 }
 
-function render(){
-  subtitle.textContent = `MODE: WIZARD • BAND: ${state.band} (${freqFromBand(state.band)} MHz)`;
-
-  // Decide what to show:
-  switch(screen){
-
-    case "BAND":
-      setOptions(
-        "SELECT BAND",
-        "Choose which frequency you are calculating for.",
-        [
-          {label:"LOW (250 MHz)", onPick: () => { state.band="LOW"; save(); setScreen("MODE"); }},
-          {label:"HIGH (1000 MHz)", onPick: () => { state.band="HIGH"; save(); setScreen("MODE"); }}
-        ]
-      );
-      break;
-
-    case "MODE":
-      setOptions(
-        "WHERE IS YOUR METER READING TAKEN?",
-        "AT TAP = your reading is at the current tap. UPSTREAM = before the run.",
-        [
-          {label:"AT TAP (local reading)", onPick: () => { state.mode="AT_TAP"; save(); setScreen("METER250"); }},
-          {label:"UPSTREAM (before run)", onPick: () => { state.mode="UPSTREAM"; save(); setScreen("METER250"); }}
-        ]
-      );
-      break;
-
-    case "METER250":
-      showNumber(
-        "METER @ 250 MHz (dBmV)",
-        "Tap OK to continue.",
-        state.meter250,
-        (val) => { state.meter250 = val; save(); setScreen("METER1000"); }
-      );
-      break;
-
-    case "METER1000":
-      showNumber(
-        "METER @ 1000 MHz (dBmV)",
-        "Tap OK to continue.",
-        state.meter1000,
-        (val) => { state.meter1000 = val; save(); setScreen("PAD"); }
-      );
-      break;
-
-    case "PAD":
-      showNumber(
-        "METER PAD (dB)",
-        "Example: 20. If your meter compensates, choose YES next.",
-        state.pad,
-        (val) => { state.pad = val; save(); setScreen("PADCOMP"); }
-      );
-      break;
-
-    case "PADCOMP":
-      setOptions(
-        "DOES YOUR METER COMPENSATE FOR PAD?",
-        "YES = do NOT subtract pad. NO = subtract pad.",
-        [
-          {label:"NO (subtract pad)", onPick: () => { state.padComp=false; save(); setScreen("SEG_MENU"); }},
-          {label:"YES (meter compensates)", onPick: () => { state.padComp=true; save(); setScreen("SEG_MENU"); }}
-        ]
-      );
-      break;
-
-    case "SEG_MENU":
-      setOptions(
-        "CABLE SEGMENTS",
-        `Segments: ${state.segments.length}. Add segments in order (mixed cable runs).`,
-        [
-          {label:"ADD SEGMENT", sub:"Pick cable type + enter feet", onPick: () => setScreen("SEG_CABLE")},
-          {label:"DONE (Next)", sub:"Go to inline taps", onPick: () => setScreen("INLINE_MENU")},
-          {label:"CLEAR ALL SEGMENTS", sub:"Remove all cable segments", onPick: () => { state.segments=[]; save(); render(); }}
-        ]
-      );
-      break;
-
-    case "SEG_CABLE":
-      setOptions(
-        "SELECT CABLE TYPE",
-        "Tap a cable type for this segment.",
-        CABLE_CHOICES.map(c => ({
-          label: c.label,
-          sub: `${LOSS_PER_100FT[c.id][250]} dB/100ft @250 • ${LOSS_PER_100FT[c.id][1000]} dB/100ft @1000`,
-          onPick: () => {
-            temp.segmentCable = c.id;
-            setScreen("SEG_FEET");
-          }
-        })).concat([
-          {label:"BACK", onPick: () => back()}
-        ])
-      );
-      break;
-
-    case "SEG_FEET":
-      showNumber(
-        "SEGMENT LENGTH (feet)",
-        `Cable: ${temp.segmentCable}. Enter feet then OK.`,
-        100,
-        (val) => {
-          state.segments.push({ cable: temp.segmentCable, ft: Math.round(val) });
-          save();
-          setScreen("SEG_MENU");
-        }
-      );
-      break;
-
-    case "INLINE_MENU":
-      setOptions(
-        "INLINE TAPS (THRU PATH)",
-        `Inline taps: ${state.inlineTaps.length}. THRU losses subtract on the THRU path.`,
-        [
-          {label:"ADD INLINE TAP", sub:"Pick value + auto THRU", onPick: () => setScreen("INLINE_VALUE")},
-          {label:"DONE (Next)", sub:"Go to internal devices", onPick: () => setScreen("INT_MENU")},
-          {label:"CLEAR INLINE TAPS", sub:"Remove all inline taps", onPick: () => { state.inlineTaps=[]; save(); render(); }}
-        ]
-      );
-      break;
-
-    case "INLINE_VALUE":
-      setOptions(
-        "SELECT INLINE TAP VALUE",
-        "Tap a value. THRU will auto-fill; you can edit later if needed.",
-        INLINE_TAP_VALUES.map(v => ({
-          label: `${v} value`,
-          sub: `Default THRU: ${f2(DEFAULT_TAP_THRU[v] ?? 1.5)} dB`,
-          onPick: () => {
-            const thru = DEFAULT_TAP_THRU[v] ?? 1.5;
-            state.inlineTaps.push({ value: v, thru });
-            save();
-            setScreen("INLINE_MENU");
-          }
-        })).concat([{label:"BACK", onPick: () => back()}])
-      );
-      break;
-
-    case "INT_MENU":
-      setOptions(
-        "INTERNAL (MINIBRIDGER) DEVICES",
-        `Internal items: ${state.internal.length}.`,
-        [
-          {label:"ADD INTERNAL DEVICE", onPick: () => setScreen("INT_ADD")},
-          {label:"DONE (Next)", sub:"Go to field devices", onPick: () => setScreen("FIELD_MENU")},
-          {label:"CLEAR INTERNAL", onPick: () => { state.internal=[]; save(); render(); }}
-        ]
-      );
-      break;
-
-    case "INT_ADD":
-      setOptions(
-        "ADD INTERNAL DEVICE",
-        "Tap a device to add it to the stack.",
-        INTERNAL_DEVICES.map(d => ({
-          label: d.name,
-          sub: `-${f2(d.loss)} dB`,
-          onPick: () => { state.internal.push({...d}); save(); setScreen("INT_MENU"); }
-        })).concat([{label:"BACK", onPick: () => back()}])
-      );
-      break;
-
-    case "FIELD_MENU":
-      setOptions(
-        "FIELD DEVICES",
-        `Field items: ${state.field.length}.`,
-        [
-          {label:"ADD FIELD DEVICE", onPick: () => setScreen("FIELD_ADD")},
-          {label:"DONE (Next)", sub:"Current tap", onPick: () => setScreen("CUR_TAP_VALUE")},
-          {label:"CLEAR FIELD", onPick: () => { state.field=[]; save(); render(); }}
-        ]
-      );
-      break;
-
-    case "FIELD_ADD":
-      setOptions(
-        "ADD FIELD DEVICE",
-        "Tap a device to add it to the stack.",
-        FIELD_DEVICES.map(d => ({
-          label: d.name,
-          sub: `-${f2(d.loss)} dB`,
-          onPick: () => { state.field.push({...d}); save(); setScreen("FIELD_MENU"); }
-        })).concat([{label:"BACK", onPick: () => back()}])
-      );
-      break;
-
-    case "CUR_TAP_VALUE":
-      setOptions(
-        "CURRENT TAP VALUE",
-        "Tap the value of the current tap you are on.",
-        CURRENT_TAP_VALUES.map(v => ({
-          label: `${v} value`,
-          sub: `Default THRU: ${f2(DEFAULT_TAP_THRU[v] ?? state.currentTapThru)} dB`,
-          onPick: () => {
-            state.currentTapValue = v;
-            state.currentTapThru = DEFAULT_TAP_THRU[v] ?? state.currentTapThru;
-            save();
-            setScreen("CUR_TAP_THRU");
-          }
-        }))
-      );
-      break;
-
-    case "CUR_TAP_THRU":
-      showNumber(
-        "CURRENT TAP THRU LOSS (dB)",
-        "Edit if needed, then OK.",
-        state.currentTapThru,
-        (val) => { state.currentTapThru = val; save(); setScreen("DONE"); }
-      );
-      break;
-
-    case "DONE":
-      setOptions(
-        "READY",
-        "Tap RESULTS to see calculations. You can BACK to edit any step.",
-        [
-          {label:"SHOW RESULTS", onPick: () => showResults()},
-          {label:"EDIT INLINE TAP THRU LOSSES", sub:"(optional)", onPick: () => setScreen("EDIT_INLINE_LIST")},
-          {label:"EDIT CABLE SEGMENTS", onPick: () => setScreen("SEG_MENU")}
-        ]
-      );
-      break;
-
-    case "EDIT_INLINE_LIST":
-      setOptions(
-        "EDIT INLINE TAP THRU",
-        "Tap a tap to edit THRU loss.",
-        state.inlineTaps.map((t, idx) => ({
-          label: `${idx+1}) ${t.value}v tap`,
-          sub: `THRU: ${f2(t.thru)} dB`,
-          onPick: () => {
-            temp.editInlineIndex = idx;
-            setScreen("EDIT_INLINE_THRU");
-          }
-        })).concat([
-          {label:"BACK", onPick: () => back()},
-          {label:"DONE", onPick: () => setScreen("DONE")}
-        ])
-      );
-      break;
-
-    case "EDIT_INLINE_THRU": {
-      const idx = temp.editInlineIndex;
-      const t = state.inlineTaps[idx];
-      showNumber(
-        `INLINE ${idx+1} THRU LOSS (dB)`,
-        `${t.value}v inline tap — edit thru loss.`,
-        t.thru,
-        (val) => {
-          state.inlineTaps[idx].thru = val;
-          save();
-          setScreen("EDIT_INLINE_LIST");
-        }
-      );
-      break;
-    }
-
-    default:
-      setScreen("BAND");
-  }
-}
-
-const temp = {};
-
-// ---------- Analysis ----------
+// ---------- Calculations ----------
 function startLevel(freq){
   const meter = (freq === 250) ? state.meter250 : state.meter1000;
   return state.padComp ? meter : (meter - state.pad);
 }
-
 function cableLossForSegment(seg, freq){
   const row = LOSS_PER_100FT[seg.cable];
   if (!row) return 0;
-  const per100 = row[freq];
-  return per100 * (seg.ft / 100);
+  return row[freq] * (seg.ft / 100);
 }
 function totalCableLoss(freq){
-  return state.segments.reduce((s, seg) => s + cableLossForSegment(seg, freq), 0);
+  return state.segments.reduce((s, seg)=> s + cableLossForSegment(seg, freq), 0);
 }
 function totalInlineThruLoss(){
-  return state.inlineTaps.reduce((s, t) => s + (t.thru || 0), 0);
+  return state.inlineTaps.reduce((s, t)=> s + (t.thru || 0), 0);
 }
 function totalDeviceLoss(list){
-  return list.reduce((s, d) => s + (d.loss || 0), 0);
+  return list.reduce((s, d)=> s + (d.loss || 0), 0);
 }
 
-function showResults(){
-  const freq = freqFromBand(state.band);
+function computeFor(freq){
   const start = startLevel(freq);
 
   const cab = totalCableLoss(freq);
@@ -478,6 +199,7 @@ function showResults(){
   const internal = totalDeviceLoss(state.internal);
   const field = totalDeviceLoss(state.field);
 
+  // level at current tap input
   let levelAtTapIn = start;
   if (state.mode === "UPSTREAM"){
     levelAtTapIn = start - cab - inlineThru - internal - field;
@@ -486,153 +208,313 @@ function showResults(){
   const tapPort = levelAtTapIn - state.currentTapValue;
   const thruLocal = levelAtTapIn - state.currentTapThru;
 
+  // final THRU after run (if reading is at tap, subtract downstream losses)
   let finalThru = thruLocal;
   if (state.mode === "AT_TAP"){
     finalThru = thruLocal - cab - inlineThru - internal - field;
   }
 
-  // Inline tap ports along THRU path
+  // inline tap port chain along THRU path (starting at current tap THRU output)
   let running = thruLocal;
   const inlineLines = [];
   for (let i=0; i<state.inlineTaps.length; i++){
     const t = state.inlineTaps[i];
     const port = running - t.value;
     running = running - t.thru;
-    inlineLines.push(`${i+1}) ${t.value}v  PORT ${f2(port)} dBmV | THRU AFTER ${f2(running)} dBmV  (THRU -${f2(t.thru)}dB)`);
+    inlineLines.push(`${i+1}) ${t.value}v  PORT ${f2(port)} | THRU_AFTER ${f2(running)} (THRU -${f2(t.thru)})`);
   }
 
-  const status =
-    (finalThru >= -2 && finalThru <= 15) ? "OK" :
-    (finalThru < -2) ? "LOW" : "HOT";
-
-  const segLines = state.segments.map((s,i)=> {
+  const segLines = state.segments.map((s,i)=>{
     const l = cableLossForSegment(s, freq);
-    return `${i+1}) ${s.cable} ${s.ft}ft  -> -${f2(l)} dB`;
+    return `${i+1}) ${s.cable} ${s.ft}ft  -${f2(l)} dB`;
   });
 
-  const txt =
-`================================
-FVG INDUSTRIES (TM) — RESULTS
-================================
-BAND/FREQ:            ${state.band} / ${freq} MHz
-MODE:                 ${state.mode}
+  return {
+    freq, start, cab, inlineThru, internal, field,
+    levelAtTapIn, tapPort, thruLocal, finalThru,
+    segLines, inlineLines
+  };
+}
 
-START LEVEL USED:     ${f2(start)} dBmV ${state.padComp ? "(PAD COMP)" : `(PAD -${f2(state.pad)}dB)`}
+function formatResult(r){
+  const status =
+    (r.finalThru >= -2 && r.finalThru <= 15) ? "OK" :
+    (r.finalThru < -2) ? "LOW" : "HOT";
 
-CABLE SEGMENTS:
-${segLines.length ? segLines.join("\n") : "(none)"}
-TOTAL CABLE LOSS:     -${f2(cab)} dB
+  return (
+`Start used:         ${f2(r.start)} dBmV
+Mode:               ${state.mode}
+Pad:                ${state.padComp ? "COMP" : `-${f2(state.pad)} dB`}
 
-INLINE TAPS THRU TOTAL: -${f2(inlineThru)} dB
-INTERNAL TOTAL:         -${f2(internal)} dB
-FIELD TOTAL:            -${f2(field)} dB
+Cable loss:         -${f2(r.cab)} dB
+Inline THRU total:  -${f2(r.inlineThru)} dB
+Internal total:     -${f2(r.internal)} dB
+Field total:        -${f2(r.field)} dB
 
-LEVEL AT TAP IN:      ${f2(levelAtTapIn)} dBmV
-TAP PORT OUTPUT:      ${f2(tapPort)} dBmV   (tap value -${f2(state.currentTapValue)}dB)
-THRU OUTPUT (LOCAL):  ${f2(thruLocal)} dBmV (tap thru -${f2(state.currentTapThru)}dB)
+Level @ tap IN:     ${f2(r.levelAtTapIn)} dBmV
+Tap port OUT:       ${f2(r.tapPort)} dBmV  (tap -${f2(state.currentTapValue)})
+Thru OUT (local):   ${f2(r.thruLocal)} dBmV (thru -${f2(state.currentTapThru)})
 
-INLINE TAP PORTS (DOWNSTREAM):
-${inlineLines.length ? inlineLines.join("\n") : "(none)"}
+Inline ports (downstream):
+${r.inlineLines.length ? r.inlineLines.join("\n") : "(none)"}
 
-FINAL THRU LEVEL:     ${f2(finalThru)} dBmV
-STATUS:               [ ${status} ]
-================================
-`;
+Final THRU level:   ${f2(r.finalThru)} dBmV
+Status:             ${status}
 
-  resultsEl.textContent = txt;
-  resultsEl.classList.remove("hidden");
+Segments:
+${r.segLines.length ? r.segLines.join("\n") : "(none)"}`
+  );
+}
+
+function showResults(){
+  const low = computeFor(250);
+  const high = computeFor(1000);
+  resLow.textContent = formatResult(low);
+  resHigh.textContent = formatResult(high);
+  resultsWrap.classList.remove("hidden");
+}
+
+// ---------- Wizard flow ----------
+function render(){
+  switch(screen){
+
+    case "MODE":
+      setOptions(
+        "Where is your meter reading taken?",
+        "AT TAP = reading is at current tap. UPSTREAM = before the run.",
+        [
+          {label:"AT TAP (local reading)", sub:"Common: you’re standing at the tap", onPick: ()=>{ state.mode="AT_TAP"; save(); setScreen("M250"); }},
+          {label:"UPSTREAM (before run)", sub:"You measured before cable/devices", onPick: ()=>{ state.mode="UPSTREAM"; save(); setScreen("M250"); }}
+        ]
+      );
+      break;
+
+    case "M250":
+      showNumber("Meter @ 250 MHz (dBmV)", "Enter your LOW reading.", state.meter250, (v)=>{ state.meter250=v; save(); setScreen("M1000"); });
+      break;
+
+    case "M1000":
+      showNumber("Meter @ 1000 MHz (dBmV)", "Enter your HIGH reading.", state.meter1000, (v)=>{ state.meter1000=v; save(); setScreen("PAD"); });
+      break;
+
+    case "PAD":
+      showNumber("Meter pad (dB)", "Example: 20. If compensated, choose next.", state.pad, (v)=>{ state.pad=v; save(); setScreen("PADCOMP"); });
+      break;
+
+    case "PADCOMP":
+      setOptions(
+        "Does your meter compensate for the pad?",
+        "YES = do not subtract pad. NO = subtract pad.",
+        [
+          {label:"NO (subtract pad)", sub:"Start = meter - pad", onPick: ()=>{ state.padComp=false; save(); setScreen("SEG_MENU"); }},
+          {label:"YES (compensated)", sub:"Start = meter", onPick: ()=>{ state.padComp=true; save(); setScreen("SEG_MENU"); }}
+        ]
+      );
+      break;
+
+    case "SEG_MENU":
+      setOptions(
+        "Cable segments",
+        `Segments: ${state.segments.length}. Add in order (mixed cable OK).`,
+        [
+          {label:"Add segment", sub:"Pick cable + enter feet", onPick: ()=> setScreen("SEG_CABLE")},
+          {label:"Done", sub:"Go to inline taps", onPick: ()=> setScreen("INLINE_MENU")},
+          {label:"Clear segments", sub:"Remove all segments", onPick: ()=>{ state.segments=[]; save(); render(); }}
+        ]
+      );
+      break;
+
+    case "SEG_CABLE":
+      setOptions(
+        "Select cable type",
+        "Tap a cable for this segment.",
+        CABLE_CHOICES.map(c => ({
+          label: c.label,
+          sub: `${LOSS_PER_100FT[c.id][250]} dB/100ft @250 • ${LOSS_PER_100FT[c.id][1000]} dB/100ft @1000`,
+          onPick: ()=>{ temp.segCable=c.id; setScreen("SEG_FEET"); }
+        })).concat([{label:"Back", sub:"", onPick: ()=> back()}])
+      );
+      break;
+
+    case "SEG_FEET":
+      showNumber(`Segment length (ft)`, `Cable: ${temp.segCable}`, 100, (v)=>{
+        state.segments.push({ cable: temp.segCable, ft: Math.round(v) });
+        save(); setScreen("SEG_MENU");
+      });
+      break;
+
+    case "INLINE_MENU":
+      setOptions(
+        "Inline taps (THRU path)",
+        `Inline taps: ${state.inlineTaps.length}. THRU losses subtract on thru path.`,
+        [
+          {label:"Add inline tap", sub:"Pick value (auto THRU)", onPick: ()=> setScreen("INLINE_VALUE")},
+          {label:"Done", sub:"Go to internal devices", onPick: ()=> setScreen("INT_MENU")},
+          {label:"Clear inline taps", sub:"Remove all inline taps", onPick: ()=>{ state.inlineTaps=[]; save(); render(); }}
+        ]
+      );
+      break;
+
+    case "INLINE_VALUE":
+      setOptions(
+        "Select inline tap value",
+        "Tap a value; THRU uses default (editable later).",
+        TAP_VALUES.map(v => ({
+          label: `${v} value`,
+          sub: `Default THRU ${f2(DEFAULT_TAP_THRU[v] ?? 1.5)} dB`,
+          onPick: ()=>{ state.inlineTaps.push({ value:v, thru: DEFAULT_TAP_THRU[v] ?? 1.5 }); save(); setScreen("INLINE_MENU"); }
+        })).concat([{label:"Back", sub:"", onPick: ()=> back()}])
+      );
+      break;
+
+    case "INT_MENU":
+      setOptions(
+        "Internal devices (minibridger)",
+        `Internal items: ${state.internal.length}.`,
+        [
+          {label:"Add internal device", sub:"2-way / DC-8 / DC-12", onPick: ()=> setScreen("INT_ADD")},
+          {label:"Done", sub:"Go to field devices", onPick: ()=> setScreen("FIELD_MENU")},
+          {label:"Clear internal", sub:"Remove internal stack", onPick: ()=>{ state.internal=[]; save(); render(); }}
+        ]
+      );
+      break;
+
+    case "INT_ADD":
+      setOptions(
+        "Add internal device",
+        "Tap a device to add it.",
+        INTERNAL_DEVICES.map(d => ({
+          label: d.name,
+          sub: `-${f2(d.loss)} dB`,
+          onPick: ()=>{ state.internal.push({...d}); save(); setScreen("INT_MENU"); }
+        })).concat([{label:"Back", sub:"", onPick: ()=> back()}])
+      );
+      break;
+
+    case "FIELD_MENU":
+      setOptions(
+        "Field devices",
+        `Field items: ${state.field.length}.`,
+        [
+          {label:"Add field device", sub:"splitters / DC", onPick: ()=> setScreen("FIELD_ADD")},
+          {label:"Done", sub:"Choose current tap", onPick: ()=> setScreen("CUR_TAP_VALUE")},
+          {label:"Clear field", sub:"Remove field stack", onPick: ()=>{ state.field=[]; save(); render(); }}
+        ]
+      );
+      break;
+
+    case "FIELD_ADD":
+      setOptions(
+        "Add field device",
+        "Tap a device to add it.",
+        FIELD_DEVICES.map(d => ({
+          label: d.name,
+          sub: `-${f2(d.loss)} dB`,
+          onPick: ()=>{ state.field.push({...d}); save(); setScreen("FIELD_MENU"); }
+        })).concat([{label:"Back", sub:"", onPick: ()=> back()}])
+      );
+      break;
+
+    case "CUR_TAP_VALUE":
+      setOptions(
+        "Current tap value",
+        "Tap the value of the tap you’re on.",
+        TAP_VALUES.map(v => ({
+          label: `${v} value`,
+          sub: `Default THRU ${f2(DEFAULT_TAP_THRU[v] ?? state.currentTapThru)} dB`,
+          onPick: ()=>{ state.currentTapValue=v; state.currentTapThru = DEFAULT_TAP_THRU[v] ?? state.currentTapThru; save(); setScreen("CUR_TAP_THRU"); }
+        }))
+      );
+      break;
+
+    case "CUR_TAP_THRU":
+      showNumber("Current tap THRU loss (dB)", "Edit if needed.", state.currentTapThru, (v)=>{ state.currentTapThru=v; save(); setScreen("DONE"); });
+      break;
+
+    case "DONE":
+      setOptions(
+        "Ready",
+        "Tap Results to calculate both 250 and 1000 automatically.",
+        [
+          {label:"Show results", sub:"(250 + 1000)", onPick: ()=> showResults()},
+          {label:"Edit cable segments", sub:"", onPick: ()=> setScreen("SEG_MENU")},
+          {label:"Edit inline taps", sub:"", onPick: ()=> setScreen("INLINE_MENU")}
+        ]
+      );
+      break;
+
+    default:
+      screen="MODE";
+      render();
+  }
 }
 
 // ---------- Boot sound ----------
-function pipboyChirp(){
+function startupSound(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   if (!AudioCtx) return;
 
   const ctx = new AudioCtx();
   const now = ctx.currentTime;
 
-  const master = ctx.createGain();
-  master.gain.setValueAtTime(0.0, now);
-  master.gain.linearRampToValueAtTime(0.20, now + 0.02);
-  master.gain.exponentialRampToValueAtTime(0.0001, now + 0.75);
-  master.connect(ctx.destination);
+  const out = ctx.createGain();
+  out.gain.setValueAtTime(0.0001, now);
+  out.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
+  out.gain.exponentialRampToValueAtTime(0.0001, now + 0.75);
+  out.connect(ctx.destination);
 
-  function chirp(t0, f0, f1, dur){
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = "square";
-    o.frequency.setValueAtTime(f0, t0);
-    o.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(0.7, t0 + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    o.connect(g); g.connect(master);
-    o.start(t0); o.stop(t0 + dur);
-  }
-  chirp(now + 0.00, 520, 880, 0.10);
-  chirp(now + 0.14, 420, 700, 0.12);
-  chirp(now + 0.30, 620, 980, 0.14);
+  const o = ctx.createOscillator();
+  o.type = "sine";
+  o.frequency.setValueAtTime(520, now);
+  o.frequency.linearRampToValueAtTime(880, now + 0.12);
+  o.frequency.linearRampToValueAtTime(660, now + 0.24);
+  o.connect(out);
+  o.start(now);
+  o.stop(now + 0.30);
 
-  setTimeout(() => { try{ ctx.close(); }catch{} }, 1200);
+  setTimeout(()=>{ try{ ctx.close(); }catch{} }, 1000);
 }
 
 function bootAnim(){
-  const lines = [
-    "FVG INDUSTRIES (TM)",
-    "CATV CALC INITIALIZING....",
-    "LOADING WIZARD UI.............. OK",
-    "LOADING LOSS TABLES............ OK",
-    "LOADING TAP MODULE............. OK",
-    "READY."
-  ];
-  bootText.textContent = "";
   let i = 0;
-  const t = setInterval(() => {
-    bootText.textContent += lines[i] + "\n";
+  const dots = ["•", "••", "•••"];
+  const t = setInterval(()=>{
+    bootDots.textContent = dots[i % dots.length];
     i++;
-    if (i >= lines.length) clearInterval(t);
-  }, 220);
+    if (i > 9) clearInterval(t);
+  }, 160);
 }
 
 // iPhone: touchend + click
 function startApp(e){
   if (e) e.preventDefault();
-  pipboyChirp();
+  startupSound();
   boot.style.display = "none";
   render();
 }
-["touchend","click"].forEach(evt => bootBtn.addEventListener(evt, startApp, { once:true, passive:false }));
+["touchend","click"].forEach(evt => bootBtn.addEventListener(evt, startApp, {once:true, passive:false}));
 
 // numeric handlers
-numOk.addEventListener("click", (e) => {
+numOk.addEventListener("click", (e)=>{
   e.preventDefault();
-  const val = n(numInput.value, NaN);
-  if (!Number.isFinite(val)){
-    alert("Enter a number.");
-    return;
-  }
+  const v = n(numInput.value, NaN);
+  if (!Number.isFinite(v)) { alert("Enter a number."); return; }
   const cb = pendingNumber;
   pendingNumber = null;
   hideNumber();
-  cb(val);
+  cb(v);
 });
-numCancel.addEventListener("click", (e) => {
-  e.preventDefault();
-  hideNumber();
-  render();
-});
+numCancel.addEventListener("click", (e)=>{ e.preventDefault(); hideNumber(); render(); });
 
 backBtn.addEventListener("click", (e)=>{ e.preventDefault(); back(); });
-resetBtn.addEventListener("click", (e)=>{ e.preventDefault(); if (confirm("Reset everything?")) resetAll(); });
 resultsBtn.addEventListener("click", (e)=>{ e.preventDefault(); showResults(); });
+resultsBtnTop.addEventListener("click", (e)=>{ e.preventDefault(); showResults(); });
+resetBtnTop.addEventListener("click", (e)=>{ e.preventDefault(); if (confirm("Reset everything?")) resetAll(); });
 
-// load saved state
 load();
 bootAnim();
 
-// Service worker
+// SW register
 if ("serviceWorker" in navigator){
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch(()=>{});
-  });
+  window.addEventListener("load", ()=> navigator.serviceWorker.register("./sw.js").catch(()=>{}));
 }
