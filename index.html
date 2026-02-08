@@ -2,121 +2,217 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#070a12" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b0f1a" />
   <title>CATV Calc</title>
-
-  <!-- Cache-bust -->
-  <link rel="stylesheet" href="style.css?v=20260207b" />
+  <link rel="stylesheet" href="style.css" />
 </head>
-
 <body>
-  <!-- Boot overlay -->
+  <!-- BOOT -->
   <div id="boot" class="boot">
     <div class="bootCard">
-      <div class="bootBrand">FVG INDUSTRIES™</div>
-      <div class="bootLine">CATV CALC INITIALIZING…</div>
-      <div class="bootDots" id="bootDots">•••</div>
-
-      <button id="bootBtn" class="btn primary big" onclick="window.__STARTAPP && window.__STARTAPP(event)">Start</button>
-      <div class="bootHint">Tap Start (required for sound on iPhone).</div>
+      <div class="bootTitle">FVG INDUSTRIES (TM)</div>
+      <div class="bootSub">CATV CALC INITIALIZING<span id="bootDots">•</span></div>
+      <button id="bootBtn" class="btn primary big">START</button>
+      <div class="bootHint">Tap START to begin (required for sound on iPhone).</div>
     </div>
   </div>
 
+  <!-- APP -->
   <header class="topbar">
-    <div class="topLeft">
-      <div class="appName">CATV Calc</div>
-      <div class="appSub" id="appSub">Wizard • Dual-band (250 + 1000)</div>
+    <div class="brand">
+      <div class="brandTitle">CATV Calc</div>
+      <div class="brandSub">Wizard • Dual-band (250 + 1000)</div>
     </div>
-    <div class="topRight">
+
+    <div class="tabs">
+      <button id="tabCalc" class="tab active">CATV Calc</button>
+      <button id="tabInfo" class="tab">CATV Info</button>
+    </div>
+
+    <div class="topActions">
       <button id="showResultsTop" class="btn ghost">Results</button>
       <button id="resetTop" class="btn ghost">Reset</button>
     </div>
   </header>
 
   <main class="wrap">
-    <!-- Wizard card -->
-    <section class="card" id="card">
-      <div class="qHeader">
-        <div class="qTitle" id="qTitle">Question</div>
-        <div class="qHint" id="qHint"></div>
-      </div>
+    <!-- PAGE: CALC -->
+    <section id="pageCalc">
+      <div class="card">
+        <div class="qTitle" id="qTitle">...</div>
+        <div class="qHint" id="qHint">...</div>
 
-      <div id="options" class="options"></div>
+        <div id="options" class="options"></div>
 
-      <div id="numWrap" class="numWrap hidden">
-        <div class="numRow">
-          <div class="prompt">Value</div>
-          <input id="numInput" class="numInput" inputmode="decimal" type="number" step="any" />
+        <div id="numWrap" class="numWrap hidden">
+          <input id="numInput" class="numInput" type="number" inputmode="decimal" placeholder="Enter a number" />
+          <div class="row">
+            <button id="numOk" class="btn primary">OK</button>
+            <button id="numCancel" class="btn ghost">Cancel</button>
+          </div>
         </div>
-        <div class="numBtns">
-          <button id="numOk" class="btn primary">OK</button>
-          <button id="numCancel" class="btn ghost">Cancel</button>
-        </div>
-      </div>
 
-      <!-- Mini calc (only shown on Cable Segments screen) -->
-     <div id="miniCalc" class="miniCalc hidden">
-  <div class="miniTitle">Quick Calc (sum up to 8)</div>
-
-  <div class="sumGrid">
-    <input id="s1" class="sumInput" type="number" inputmode="decimal" placeholder="1" />
-    <input id="s2" class="sumInput" type="number" inputmode="decimal" placeholder="2" />
-    <input id="s3" class="sumInput" type="number" inputmode="decimal" placeholder="3" />
-    <input id="s4" class="sumInput" type="number" inputmode="decimal" placeholder="4" />
-    <input id="s5" class="sumInput" type="number" inputmode="decimal" placeholder="5" />
-    <input id="s6" class="sumInput" type="number" inputmode="decimal" placeholder="6" />
-    <input id="s7" class="sumInput" type="number" inputmode="decimal" placeholder="7" />
-    <input id="s8" class="sumInput" type="number" inputmode="decimal" placeholder="8" />
-  </div>
-
-  <div class="sumBar">
-    <div class="sumLabel">SUM</div>
-    <div id="sumOut" class="sumOut">0.00</div>
-    <button id="sumCopy" class="btn ghost miniBtn">Copy</button>
-    <button id="sumClear" class="btn ghost miniBtn">Clear</button>
-  </div>
-
-  <div class="sumHint">Tip: tap boxes, enter numbers — sum updates automatically.</div>
-</div>
-
-        <div class="miniActions">
-          <button id="mcCopy" class="btn ghost miniBtn">Copy</button>
-          <button id="mcClear" class="btn ghost miniBtn">Clear</button>
+        <div class="row bottomRow">
+          <button id="backBtn" class="btn ghost">Back</button>
+          <button id="showResults" class="btn primary">Results</button>
         </div>
       </div>
 
-      <div class="footer">
-        <button id="backBtn" class="btn ghost">Back</button>
-        <button id="showResults" class="btn primary">Results</button>
+      <!-- Mini sum calculator (only on segments screen) -->
+      <div id="miniCalc" class="miniCalc hidden">
+        <div class="miniTitle">Quick Calc (sum up to 8)</div>
+
+        <div class="sumGrid">
+          <input id="s1" class="sumInput" type="number" inputmode="decimal" placeholder="1" />
+          <input id="s2" class="sumInput" type="number" inputmode="decimal" placeholder="2" />
+          <input id="s3" class="sumInput" type="number" inputmode="decimal" placeholder="3" />
+          <input id="s4" class="sumInput" type="number" inputmode="decimal" placeholder="4" />
+          <input id="s5" class="sumInput" type="number" inputmode="decimal" placeholder="5" />
+          <input id="s6" class="sumInput" type="number" inputmode="decimal" placeholder="6" />
+          <input id="s7" class="sumInput" type="number" inputmode="decimal" placeholder="7" />
+          <input id="s8" class="sumInput" type="number" inputmode="decimal" placeholder="8" />
+        </div>
+
+        <div class="sumBar">
+          <div class="sumLabel">SUM</div>
+          <div id="sumOut" class="sumOut">0.00</div>
+          <button id="sumCopy" class="btn ghost miniBtn">Copy</button>
+          <button id="sumClear" class="btn ghost miniBtn">Clear</button>
+        </div>
+
+        <div class="sumHint">Tap boxes, enter numbers — sum updates automatically.</div>
       </div>
+
+      <!-- RESULTS -->
+      <section id="resultsWrap" class="results hidden">
+        <div class="resultsHead">Results (250 + 1000)</div>
+        <div class="resultsGrid">
+          <div class="resCard">
+            <div class="resTitle">250 MHz</div>
+            <pre id="resLow" class="mono"></pre>
+          </div>
+          <div class="resCard">
+            <div class="resTitle">1000 MHz</div>
+            <pre id="resHigh" class="mono"></pre>
+          </div>
+        </div>
+      </section>
     </section>
 
-    <!-- Results -->
-    <section id="resultsWrap" class="resultsWrap hidden">
-      <div class="resultsHeader">
-        <div class="resultsTitle">Results</div>
-        <div class="resultsSub">Calculated automatically for LOW (250 MHz) and HIGH (1000 MHz)</div>
-      </div>
+    <!-- PAGE: INFO -->
+    <section id="pageInfo" class="hidden">
+      <div class="card">
+        <div class="qTitle">CATV Info</div>
+        <div class="qHint">Quick reference (offline). Sweep shapes + causes + quick math.</div>
 
-      <div class="grid2">
-        <div class="resultCard">
-          <div class="bandTag low">LOW • 250 MHz</div>
-          <pre id="resLow" class="mono"></pre>
-        </div>
+        <div class="infoGrid">
 
-        <div class="resultCard">
-          <div class="bandTag high">HIGH • 1000 MHz</div>
-          <pre id="resHigh" class="mono"></pre>
+          <div class="infoCard">
+            <div class="infoTitle">Humping (midband build-up)</div>
+            <div class="infoText">
+              Looks like a broad “hill” in the middle of the sweep.
+              <ul>
+                <li><b>Common cause:</b> too much equalization in the cascade (often trying to “fix” roll-off).</li>
+                <li><b>What to check:</b> EQ values, tilt, pad/EQ balance, compare upstream/downstream amps.</li>
+              </ul>
+            </div>
+            <div class="miniGraph">
+              <div class="gLine hump"></div>
+              <div class="gAxis">50 MHz → High</div>
+            </div>
+          </div>
+
+          <div class="infoCard">
+            <div class="infoTitle">Reflections (standing waves)</div>
+            <div class="infoText">
+              Evenly spaced peaks/valleys (“ripples”). Can show across the whole band or mostly high end.
+              <ul>
+                <li><b>Common cause:</b> impedance mismatch (anything not ~75Ω) somewhere in the signal path.</li>
+                <li><b>Often shows up with:</b> bad ports, damaged cable, loose seizure/connector, bad passives, testpoints.</li>
+              </ul>
+            </div>
+            <div class="miniGraph">
+              <div class="gLine ripple"></div>
+              <div class="gAxis">50 MHz → High</div>
+            </div>
+          </div>
+
+          <div class="infoCard">
+            <div class="infoTitle">High-end Roll-off (top-end droop)</div>
+            <div class="infoText">
+              Sweep slowly drops toward the high frequencies.
+              <ul>
+                <li><b>Common causes:</b> loose connectors/center seizure, loose modules, amp alignment issues.</li>
+                <li><b>Also:</b> diplex/filter problems, bad splices (center conductor issues), wrong bandwidth passives.</li>
+              </ul>
+            </div>
+            <div class="miniGraph">
+              <div class="gLine rolloff"></div>
+              <div class="gAxis">50 MHz → High</div>
+            </div>
+          </div>
+
+          <div class="infoCard">
+            <div class="infoTitle">Notch (sharp dip)</div>
+            <div class="infoText">
+              A narrow, sharp dip in the sweep (often deep).
+              <ul>
+                <li><b>Common causes:</b> loose connector, bad tap/coupler faceplate, module issues.</li>
+                <li><b>Also:</b> internal RF grounding problems in an amp.</li>
+              </ul>
+            </div>
+            <div class="miniGraph">
+              <div class="gLine notch"></div>
+              <div class="gAxis">50 MHz → High</div>
+            </div>
+          </div>
+
+          <div class="infoCard" style="grid-column: 1 / -1;">
+            <div class="infoTitle">Locate a reflection using ripple spacing</div>
+            <div class="infoText">
+              Estimate distance to a mismatch from the ripple “period” (spacing).
+              <div class="formula"><b>D (feet) = 492 × (Vp / F)</b></div>
+              <ul>
+                <li><b>Vp</b> = velocity of propagation (decimal of speed of light; typical ~0.87)</li>
+                <li><b>F</b> = ripple period in MHz (one full peak-to-peak cycle width)</li>
+                <li>For meters: <b>D (m) = 149 × (Vp / F)</b></li>
+              </ul>
+              <div class="infoDivider"></div>
+              <div class="infoText"><b>Example:</b> Vp=0.87, F=10 MHz → D ≈ 42.8 ft</div>
+            </div>
+          </div>
+
+          <div class="infoCard">
+            <div class="infoTitle">Quick Loss Cheatsheet</div>
+            <pre class="mono">
+2-way splitter: 3.5 dB
+3-way (636):    ~5.5 dB (typical)
+DC-9:           9 dB
+DC-12:          12 dB
+            </pre>
+          </div>
+
+          <div class="infoCard">
+            <div class="infoTitle">Tap THRU Defaults</div>
+            <pre class="mono">
+4v:  1.2
+8v:  1.4
+11v: 1.5
+14v: 1.6
+17v: 1.7
+20v: 1.8
+23v: 1.9
+26v: 2.0
+29v: 2.1
+            </pre>
+          </div>
+
         </div>
       </div>
     </section>
   </main>
 
-  <script src="app.js?v=20260207b"></script>
+  <script src="app.js"></script>
 </body>
 </html>
-
