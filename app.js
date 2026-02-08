@@ -1,9 +1,10 @@
 /* ============================================================
    CATV CALC — 2026 Wizard (Dual-band auto calc)
+   - Tabs: Calc + Info
    - Meter pad removed (ALWAYS 0)
    - 8-input SUM mini calculator only on Cable Segments screen
    - Inline tap THRU subtraction included
-   - No service worker (avoid cache/tap issues)
+   - No service worker
    ============================================================ */
 
 console.log("CATV CALC: app.js loaded");
@@ -12,6 +13,36 @@ console.log("CATV CALC: app.js loaded");
 window.addEventListener("error", (e) => alert("JS ERROR: " + (e?.message || "unknown")));
 window.addEventListener("unhandledrejection", (e) => alert("JS PROMISE ERROR: " + (e?.reason?.message || e?.reason || "unknown")));
 
+// ---- Tabs ----
+const tabCalc = document.getElementById("tabCalc");
+const tabInfo = document.getElementById("tabInfo");
+const pageCalc = document.getElementById("pageCalc");
+const pageInfo = document.getElementById("pageInfo");
+let currentTab = "calc";
+
+function setTab(which){
+  currentTab = (which === "info") ? "info" : "calc";
+
+  if (currentTab === "info"){
+    pageCalc?.classList.add("hidden");
+    pageInfo?.classList.remove("hidden");
+    tabCalc?.classList.remove("active");
+    tabInfo?.classList.add("active");
+  } else {
+    pageInfo?.classList.add("hidden");
+    pageCalc?.classList.remove("hidden");
+    tabInfo?.classList.remove("active");
+    tabCalc?.classList.add("active");
+  }
+
+  // Keep miniCalc logic correct
+  render();
+}
+
+tabCalc?.addEventListener("click", (e)=>{ e.preventDefault(); setTab("calc"); });
+tabInfo?.addEventListener("click", (e)=>{ e.preventDefault(); setTab("info"); });
+
+// ---- Main UI ----
 const boot = document.getElementById("boot");
 const bootBtn = document.getElementById("bootBtn");
 const bootDots = document.getElementById("bootDots");
@@ -34,17 +65,17 @@ const resultsWrap = document.getElementById("resultsWrap");
 const resLow = document.getElementById("resLow");
 const resHigh = document.getElementById("resHigh");
 
-// Mini calc wrapper (only visible on SEG_MENU)
+// Mini calc wrapper (only visible on SEG_MENU and only on calc tab)
 const miniCalc = document.getElementById("miniCalc");
 
-// 8-input SUM calculator elements (must exist in index.html)
+// 8-input SUM calculator elements
 const sumIds = ["s1","s2","s3","s4","s5","s6","s7","s8"];
 const sumInputs = sumIds.map(id => document.getElementById(id));
 const sumOut = document.getElementById("sumOut");
 const sumCopy = document.getElementById("sumCopy");
 const sumClear = document.getElementById("sumClear");
 
-const STORAGE_KEY = "catv_calc_2026_nosw_v3";
+const STORAGE_KEY = "catv_calc_2026_tabs_v1";
 
 // Loss tables (dB/100ft) for 250 & 1000
 const LOSS_PER_100FT = {
@@ -165,9 +196,10 @@ function setOptions(title, hint, opts){
 }
 
 function setMiniCalcVisible(on){
-  if (on){
+  // only show on Calc tab
+  const show = on && currentTab === "calc";
+  if (show){
     miniCalc.classList.remove("hidden");
-    // refresh sum immediately when opening segments screen
     setTimeout(sumCompute, 0);
   } else {
     miniCalc.classList.add("hidden");
@@ -189,9 +221,8 @@ function back(){
 
 // --------- Calculations ----------
 function startLevel(freq){
-  // pad always 0, but keep formula clean
   const meter = (freq === 250) ? state.meter250 : state.meter1000;
-  return meter - state.pad;
+  return meter - state.pad; // pad always 0
 }
 function cableLossForSegment(seg, freq){
   const row = LOSS_PER_100FT[seg.cable];
@@ -280,6 +311,7 @@ ${r.segLines.length ? r.segLines.join("\n") : "(none)"}`
 }
 
 function showResultsNow(){
+  if (currentTab !== "calc") setTab("calc");
   const low = computeFor(250);
   const high = computeFor(1000);
   resLow.textContent = formatResult(low);
@@ -290,6 +322,13 @@ function showResultsNow(){
 // --------- Wizard screens ----------
 function render(){
   save();
+
+  // if not on calc tab, hide calc-only elements and stop
+  if (currentTab !== "calc"){
+    setMiniCalcVisible(false);
+    resultsWrap.classList.add("hidden");
+    return;
+  }
 
   // show mini calc ONLY on cable segments screen
   setMiniCalcVisible(screen === "SEG_MENU");
@@ -463,8 +502,6 @@ function sumCompute(){
   sumOut.textContent = f2(total);
   return total;
 }
-
-// update as you type
 sumInputs.forEach(el=>{
   if (!el) return;
   el.addEventListener("input", sumCompute);
@@ -489,7 +526,6 @@ if (sumCopy){
     }
   });
 }
-
 if (sumClear){
   sumClear.addEventListener("click", (e)=>{
     e.preventDefault();
@@ -528,18 +564,18 @@ function startupSound(){
 (function bootAnim(){
   const dots = ["•", "••", "•••"];
   let i = 0;
-  setInterval(()=>{ bootDots.textContent = dots[i++ % dots.length]; }, 180);
+  setInterval(()=>{ if (bootDots) bootDots.textContent = dots[i++ % dots.length]; }, 180);
 })();
 
-// START function exposed for onclick fallback
+// START
 function startApp(e){
   if (e) e.preventDefault();
   startupSound();
   boot.style.display = "none";
   resultsWrap.classList.add("hidden");
+  setTab("calc");
   render();
 }
-window.__STARTAPP = startApp;
 
 // Listeners
 ["touchend","click"].forEach(evt => bootBtn.addEventListener(evt, startApp, { passive:false }));
