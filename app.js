@@ -147,6 +147,11 @@ function hideNumber(){
   numWrap.classList.add("hidden");
   pendingNumber = null;
 }
+function hideNumber(){
+  numWrap.classList.add("hidden");
+  pendingNumber = null;
+}
+
 function showNumber(title, hint, initial, onOk){
   qTitle.textContent = title;
   qHint.textContent = hint || "";
@@ -513,4 +518,5 @@ bootAnim();
 if ("serviceWorker" in navigator){
   window.addEventListener("load", ()=> navigator.serviceWorker.register("./sw.js").catch(()=>{}));
 }
+
 
