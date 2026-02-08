@@ -93,7 +93,11 @@ function defaultState(){
     meter250: 34.5,
     meter1000: 41.0,
     pad: 20.0,
-    padComp: false,
+    function startLevel(freq){
+  const meter = (freq === 250) ? state.meter250 : state.meter1000;
+  return meter - state.pad; // ALWAYS subtract pad
+}
+
 
     // where reading is taken
     mode: "AT_TAP", // AT_TAP or UPSTREAM
@@ -244,7 +248,8 @@ function formatResult(r){
   return (
 `Start used:         ${f2(r.start)} dBmV
 Mode:               ${state.mode}
-Pad:                ${state.padComp ? "COMP" : `-${f2(state.pad)} dB`}
+Pad:                -${f2(state.pad)} dB
+
 
 Cable loss:         -${f2(r.cab)} dB
 Inline THRU total:  -${f2(r.inlineThru)} dB
@@ -298,19 +303,9 @@ function render(){
       break;
 
     case "PAD":
-      showNumber("Meter pad (dB)", "Example: 20. If compensated, choose next.", state.pad, (v)=>{ state.pad=v; save(); setScreen("PADCOMP"); });
-      break;
+      showNumber("Meter pad (dB)", "Example: 20. This will ALWAYS be subtracted.", state.pad, (v)=>{ state.pad=v; save(); setScreen("SEG_MENU"); });
+       break;
 
-    case "PADCOMP":
-      setOptions(
-        "Does your meter compensate for the pad?",
-        "YES = do not subtract pad. NO = subtract pad.",
-        [
-          {label:"NO (subtract pad)", sub:"Start = meter - pad", onPick: ()=>{ state.padComp=false; save(); setScreen("SEG_MENU"); }},
-          {label:"YES (compensated)", sub:"Start = meter", onPick: ()=>{ state.padComp=true; save(); setScreen("SEG_MENU"); }}
-        ]
-      );
-      break;
 
     case "SEG_MENU":
       setOptions(
@@ -518,3 +513,4 @@ bootAnim();
 if ("serviceWorker" in navigator){
   window.addEventListener("load", ()=> navigator.serviceWorker.register("./sw.js").catch(()=>{}));
 }
+
