@@ -59,20 +59,30 @@
       </div>
 
       <!-- Mini calc (only shown on Cable Segments screen) -->
-      <div id="miniCalc" class="miniCalc hidden">
-        <div class="miniTitle">Quick Calc</div>
-        <div class="miniRow">
-          <input id="mcA" class="miniInput" type="number" inputmode="decimal" placeholder="A" />
-          <select id="mcOp" class="miniSelect">
-            <option value="+">+</option>
-            <option value="-">−</option>
-            <option value="*">×</option>
-            <option value="/">÷</option>
-          </select>
-          <input id="mcB" class="miniInput" type="number" inputmode="decimal" placeholder="B" />
-          <button id="mcEq" class="btn primary miniBtn">=</button>
-          <div id="mcOut" class="miniOut">0</div>
-        </div>
+     <div id="miniCalc" class="miniCalc hidden">
+  <div class="miniTitle">Quick Calc (sum up to 8)</div>
+
+  <div class="sumGrid">
+    <input id="s1" class="sumInput" type="number" inputmode="decimal" placeholder="1" />
+    <input id="s2" class="sumInput" type="number" inputmode="decimal" placeholder="2" />
+    <input id="s3" class="sumInput" type="number" inputmode="decimal" placeholder="3" />
+    <input id="s4" class="sumInput" type="number" inputmode="decimal" placeholder="4" />
+    <input id="s5" class="sumInput" type="number" inputmode="decimal" placeholder="5" />
+    <input id="s6" class="sumInput" type="number" inputmode="decimal" placeholder="6" />
+    <input id="s7" class="sumInput" type="number" inputmode="decimal" placeholder="7" />
+    <input id="s8" class="sumInput" type="number" inputmode="decimal" placeholder="8" />
+  </div>
+
+  <div class="sumBar">
+    <div class="sumLabel">SUM</div>
+    <div id="sumOut" class="sumOut">0.00</div>
+    <button id="sumCopy" class="btn ghost miniBtn">Copy</button>
+    <button id="sumClear" class="btn ghost miniBtn">Clear</button>
+  </div>
+
+  <div class="sumHint">Tip: tap boxes, enter numbers — sum updates automatically.</div>
+</div>
+
         <div class="miniActions">
           <button id="mcCopy" class="btn ghost miniBtn">Copy</button>
           <button id="mcClear" class="btn ghost miniBtn">Clear</button>
@@ -109,3 +119,4 @@
   <script src="app.js?v=20260207b"></script>
 </body>
 </html>
+
