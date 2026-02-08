@@ -1,15 +1,14 @@
 /* ============================================================
    CATV CALC — 2026 Wizard (Dual-band auto calc)
-   - No service worker/offline to avoid cache problems
-   - Start always works (onclick fallback + global function)
-   - Tap-only selection for cable/devices/tap values
-   - Only number entry: meter levels, pad, feet, current tap thru
+   - Meter pad removed (ALWAYS 0)
+   - Mini calculator only on Cable Segments screen
    - Inline tap THRU subtraction included
+   - No service worker (avoid cache/tap issues)
    ============================================================ */
 
 console.log("CATV CALC: app.js loaded");
 
-// Visible error alerts so we never get “nothing happens”
+// show errors if any (so never “nothing happens”)
 window.addEventListener("error", (e) => alert("JS ERROR: " + (e?.message || "unknown")));
 window.addEventListener("unhandledrejection", (e) => alert("JS PROMISE ERROR: " + (e?.reason?.message || e?.reason || "unknown")));
 
@@ -35,9 +34,19 @@ const resultsWrap = document.getElementById("resultsWrap");
 const resLow = document.getElementById("resLow");
 const resHigh = document.getElementById("resHigh");
 
-const STORAGE_KEY = "catv_calc_2026_nosw_v1";
+// Mini calc UI
+const miniCalc = document.getElementById("miniCalc");
+const mcA = document.getElementById("mcA");
+const mcOp = document.getElementById("mcOp");
+const mcB = document.getElementById("mcB");
+const mcEq = document.getElementById("mcEq");
+const mcOut = document.getElementById("mcOut");
+const mcCopy = document.getElementById("mcCopy");
+const mcClear = document.getElementById("mcClear");
 
-// --- Loss tables (dB/100ft) for 250 & 1000 ---
+const STORAGE_KEY = "catv_calc_2026_nosw_v2";
+
+// Loss tables (dB/100ft) for 250 & 1000
 const LOSS_PER_100FT = {
   "RG59":   {250: 4.10, 1000: 8.12},
   "RG6":    {250: 3.30, 1000: 6.55},
@@ -49,9 +58,7 @@ const LOSS_PER_100FT = {
   "P3-875": {250: 0.72, 1000: 1.53}
 };
 
-// Default THRU per tap value (edit anytime)
 const DEFAULT_TAP_THRU = { 4:1.2, 8:1.4, 11:1.5, 14:1.6, 17:1.7, 20:1.8, 23:1.9, 26:2.0, 29:2.1 };
-
 const TAP_VALUES = [4,8,11,14,17,20,23,26,29];
 
 const CABLE_CHOICES = [
@@ -105,7 +112,9 @@ function defaultState(){
     mode: "AT_TAP",     // AT_TAP or UPSTREAM
     meter250: 34.5,
     meter1000: 41.0,
-    pad: 20.0,          // ALWAYS SUBTRACTED
+
+    // pad removed; always 0
+    pad: 0.0,
 
     segments: [],
     inlineTaps: [],
@@ -120,7 +129,6 @@ function defaultState(){
 let state = defaultState();
 let screen = "MODE";
 let historyStack = [];
-
 let pendingNumber = null;
 const temp = {};
 
@@ -155,6 +163,11 @@ function setOptions(title, hint, opts){
   opts.forEach(o => optionsEl.appendChild(optButton(o.label, o.sub, o.onPick)));
 }
 
+function setMiniCalcVisible(on){
+  if (on) miniCalc.classList.remove("hidden");
+  else miniCalc.classList.add("hidden");
+}
+
 function setScreen(next){
   historyStack.push(screen);
   screen = next;
@@ -170,7 +183,7 @@ function back(){
 
 // --------- Calculations ----------
 function startLevel(freq){
-  // ALWAYS subtract pad
+  // pad always 0, but keep formula clean
   const meter = (freq === 250) ? state.meter250 : state.meter1000;
   return meter - state.pad;
 }
@@ -237,7 +250,7 @@ function computeFor(freq){
 
 function formatResult(r){
   return (
-`Start used:         ${f2(r.start)} dBmV   (meter -${f2(state.pad)}dB pad)
+`Start used:         ${f2(r.start)} dBmV   (pad fixed at 0dB)
 Mode:               ${state.mode}
 
 Cable loss:         -${f2(r.cab)} dB
@@ -272,11 +285,14 @@ function showResultsNow(){
 function render(){
   save();
 
+  // show mini calc ONLY on cable segments screen
+  setMiniCalcVisible(screen === "SEG_MENU");
+
   switch(screen){
     case "MODE":
       setOptions(
         "Where is your meter reading taken?",
-        "AT TAP = you measured at the current tap. UPSTREAM = measured before the run.",
+        "AT TAP = measured at current tap. UPSTREAM = measured before the run.",
         [
           {label:"AT TAP (local reading)", sub:"common in the field", onPick: ()=>{ state.mode="AT_TAP"; setScreen("M250"); }},
           {label:"UPSTREAM (before run)", sub:"measured before losses", onPick: ()=>{ state.mode="UPSTREAM"; setScreen("M250"); }}
@@ -289,11 +305,7 @@ function render(){
       break;
 
     case "M1000":
-      showNumber("Meter @ 1000 MHz (dBmV)", "Enter HIGH reading.", state.meter1000, (v)=>{ state.meter1000=v; setScreen("PAD"); });
-      break;
-
-    case "PAD":
-      showNumber("Meter pad (dB)", "This will ALWAYS be subtracted.", state.pad, (v)=>{ state.pad=v; setScreen("SEG_MENU"); });
+      showNumber("Meter @ 1000 MHz (dBmV)", "Enter HIGH reading.", state.meter1000, (v)=>{ state.meter1000=v; setScreen("SEG_MENU"); });
       break;
 
     case "SEG_MENU":
@@ -476,7 +488,7 @@ function startApp(e){
 }
 window.__STARTAPP = startApp;
 
-// Add event listeners too (touch + click)
+// Listeners
 ["touchend","click"].forEach(evt => bootBtn.addEventListener(evt, startApp, { passive:false }));
 
 numOk.addEventListener("click", (e)=>{
@@ -495,5 +507,49 @@ showResults.addEventListener("click", (e)=>{ e.preventDefault(); showResultsNow(
 showResultsTop.addEventListener("click", (e)=>{ e.preventDefault(); showResultsNow(); });
 resetTop.addEventListener("click", (e)=>{ e.preventDefault(); if (confirm("Reset everything?")) resetAll(); });
 
-// Load state & keep boot visible until start
+// Mini calc behavior
+function miniCalcCompute(){
+  const a = n(mcA.value, 0);
+  const b = n(mcB.value, 0);
+  const op = mcOp.value;
+  let out = 0;
+  if (op === "+") out = a + b;
+  else if (op === "-") out = a - b;
+  else if (op === "*") out = a * b;
+  else if (op === "/") out = (b === 0) ? NaN : a / b;
+
+  mcOut.textContent = Number.isFinite(out) ? f2(out) : "ERR";
+  return out;
+}
+mcEq.addEventListener("click", (e)=>{ e.preventDefault(); miniCalcCompute(); });
+mcCopy.addEventListener("click", async (e)=>{
+  e.preventDefault();
+  const txt = mcOut.textContent || "0";
+  try{
+    await navigator.clipboard.writeText(txt);
+    alert("Copied: " + txt);
+  }catch{
+    // fallback
+    const t = document.createElement("textarea");
+    t.value = txt;
+    document.body.appendChild(t);
+    t.select();
+    document.execCommand("copy");
+    t.remove();
+    alert("Copied: " + txt);
+  }
+});
+mcClear.addEventListener("click", (e)=>{
+  e.preventDefault();
+  mcA.value = "";
+  mcB.value = "";
+  mcOp.value = "+";
+  mcOut.textContent = "0";
+});
+
+// Load saved state
 load();
+
+// Ensure pad is always 0 even if old state existed
+state.pad = 0.0;
+save();
