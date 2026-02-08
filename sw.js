@@ -1,4 +1,4 @@
-const CACHE_NAME = "catv-terminal-v5";
+const CACHE_NAME = "catv-terminal-v6";
 const ASSETS = [
   "./",
   "./index.html",
@@ -25,6 +25,7 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
 });
+
 
 
 
