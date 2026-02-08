@@ -1,7 +1,7 @@
 :root{
   --bg0:#070a14;
   --bg1:#0b1020;
-  --card:#0f1732cc;
+  --card:rgba(15,23,50,.78);
   --border:rgba(255,255,255,.10);
   --border2:rgba(255,255,255,.16);
   --txt:#e9ecff;
@@ -36,7 +36,7 @@ body{
 }
 
 .shell{
-  width: min(1020px, 100%);
+  width:min(1020px,100%);
   display:flex;
   flex-direction:column;
   gap:14px;
@@ -56,7 +56,7 @@ body{
 }
 
 .brand{display:flex; flex-direction:column; gap:3px;}
-.brand .title{font-size:22px; font-weight:800;}
+.brand .title{font-size:22px; font-weight:900; letter-spacing:.2px;}
 .brand .sub{font-size:13px; color:var(--muted);}
 
 .tabs{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
@@ -83,7 +83,7 @@ body{
   border-radius: 14px;
   cursor:pointer;
   user-select:none;
-  font-weight: 650;
+  font-weight: 750;
 }
 .btn:hover{border-color: rgba(255,255,255,.24)}
 .btn.primary{
@@ -96,9 +96,6 @@ body{
 }
 .btn.ghost{background:transparent;}
 .btn:disabled{opacity:.45; cursor:not-allowed;}
-
-.grid{display:grid; grid-template-columns:1fr; gap:14px;}
-@media (min-width: 900px){ .grid.two{ grid-template-columns: 1.1fr .9fr; } }
 
 .card{
   border:1px solid var(--border);
@@ -116,7 +113,7 @@ body{
   flex-direction:column;
   gap:6px;
 }
-.card .hd .h1{font-size:18px; font-weight:800;}
+.card .hd .h1{font-size:18px; font-weight:900;}
 .card .hd .h2{font-size:13px; color:var(--muted); line-height:1.35;}
 .card .bd{padding:14px 16px 16px;}
 
@@ -139,7 +136,8 @@ input:focus, select:focus, textarea:focus{
   border-color: rgba(124,92,255,.55);
   box-shadow: 0 0 0 4px rgba(124,92,255,.12);
 }
-.small{font-size:12px; color:var(--muted); margin-top:4px;}
+
+.small{font-size:12px; color:var(--muted); margin-top:6px;}
 
 .list{
   border:1px solid rgba(255,255,255,.10);
@@ -157,7 +155,7 @@ input:focus, select:focus, textarea:focus{
 }
 .item + .item{ border-top: 1px solid rgba(255,255,255,.06); }
 .item .left{display:flex; flex-direction:column; gap:3px;}
-.item .name{font-weight:750}
+.item .name{font-weight:800}
 .item .meta{font-size:12px;color:var(--muted)}
 
 .resBox{
@@ -167,24 +165,12 @@ input:focus, select:focus, textarea:focus{
   padding: 12px 12px;
 }
 .resBox .k{ color:var(--muted); font-size:12px; }
-.resBox .v{ font-size:20px; font-weight:900; margin-top:4px; }
+.resBox .v{ font-size:20px; font-weight:950; margin-top:4px; }
 .resBox .v.good{ color: var(--good); }
 .resBox .v.warn{ color: var(--warn); }
 .resBox .v.bad{ color: var(--bad); }
 
 .hr{height:1px; background: rgba(255,255,255,.08); margin:12px 0;}
 
-.table{
-  width:100%;
-  border-collapse: collapse;
-  overflow:hidden;
-  border-radius: 14px;
-  border:1px solid rgba(255,255,255,.10);
-}
-.table th, .table td{
-  padding:10px 10px;
-  border-bottom:1px solid rgba(255,255,255,.06);
-  font-size:13px;
-}
-.table th{ color: var(--muted); text-align:left; font-weight:700; background: rgba(255,255,255,.03); }
-.table tr:last-child td{ border-bottom: none; }
+.grid{display:grid; grid-template-columns:1fr; gap:14px;}
+@media (min-width:900px){ .grid.two{grid-template-columns:1fr 1fr;} }
