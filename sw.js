@@ -1,50 +1,38 @@
-const CACHE = "catvcalc-v7"; // bump this if you ever want to force-refresh everyone's cache
+const CACHE = "catv-calc-v3-cache";
 
 const ASSETS = [
   "./",
   "./index.html",
   "./style.css",
   "./app.js",
-  "./manifest.json"
+  "./manifest.json",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png"
 ];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(ASSETS))
+    caches.open(CACHE).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    (async () => {
-      const keys = await caches.keys();
-      await Promise.all(keys.map(k => (k !== CACHE ? caches.delete(k) : Promise.resolve())));
-      await self.clients.claim();
-    })()
+    caches.keys().then(keys => Promise.all(keys.map(k => (k===CACHE ? null : caches.delete(k)))))
+      .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   event.respondWith(
-    (async () => {
-      const cache = await caches.open(CACHE);
-      const cached = await cache.match(req);
+    caches.match(req).then((cached) => {
       if (cached) return cached;
-
-      try {
-        const fresh = await fetch(req);
-        // Cache GET only
-        if (req.method === "GET" && fresh && fresh.status === 200) {
-          cache.put(req, fresh.clone());
-        }
-        return fresh;
-      } catch (e) {
-        // Offline fallback
-        const fallback = await cache.match("./index.html");
-        return fallback || new Response("Offline", { status: 200 });
-      }
-    })()
+      return fetch(req).then((resp) => {
+        const copy = resp.clone();
+        caches.open(CACHE).then((cache) => cache.put(req, copy)).catch(()=>{});
+        return resp;
+      }).catch(() => caches.match("./index.html"));
+    })
   );
 });
