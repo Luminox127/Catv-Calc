@@ -2,172 +2,26 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1020" />
   <title>CATV Calc</title>
 
-  <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
 
-  <meta name="theme-color" content="#0b1020" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="stylesheet" href="style.css" />
 </head>
-
 <body>
-  <header class="topbar">
-    <div class="topbar__left">
-      <div class="brand">CATV Calc</div>
-      <div class="subtitle">Dual-band (250 + 1000) • Wizard + Segments</div>
-    </div>
-    <div class="topbar__right">
-      <button class="chip" id="btnResults" type="button">Results</button>
-      <button class="chip chip--danger" id="btnReset" type="button">Reset</button>
-    </div>
-  </header>
+  <div id="app"></div>
 
-  <nav class="tabs">
-    <button class="tab tab--active" data-tab="calc" type="button">CATV Calc</button>
-    <button class="tab" data-tab="info" type="button">CATV Info</button>
-  </nav>
-
-  <main class="wrap">
-    <!-- CALC TAB -->
-    <section id="tab-calc" class="tabpage">
-      <div class="card">
-        <div class="card__title">Start</div>
-        <div class="card__desc">Tap <b>START</b> once to enable audio + unlock the wizard (required on iPhone).</div>
-        <div class="row">
-          <button id="btnStart" class="btn btn--primary" type="button">START</button>
-          <div id="startStatus" class="pill pill--muted">Waiting…</div>
-        </div>
-      </div>
-
-      <div id="wizardMount"></div>
-
-      <div class="card" id="segmentsCard">
-        <div class="card__title">Cable Segments</div>
-        <div class="card__desc">Add each segment. App auto-calcs loss at 250 & 1000.</div>
-
-        <div id="segmentsList" class="stack"></div>
-        <div class="row">
-          <button id="btnAddSeg" class="btn" type="button">Add Segment</button>
-          <button id="btnClearSeg" class="btn btn--ghost" type="button">Clear Segments</button>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="card__title">Mini Calculator (up to 8)</div>
-        <div class="card__desc">Quick sum like 3+4+2+8+…</div>
-        <div id="miniCalc" class="minicalc"></div>
-        <div class="row">
-          <button id="btnMiniSum" class="btn" type="button">Sum</button>
-          <div id="miniOut" class="pill pill--muted">= 0</div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card__title">Inline Taps (in the way)</div>
-        <div class="card__desc">These taps reduce the <b>THRU path</b> before your current tap.</div>
-
-        <div id="inlineTapsList" class="stack"></div>
-        <div class="row">
-          <button id="btnAddTap" class="btn" type="button">Add Inline Tap</button>
-          <button id="btnClearTap" class="btn btn--ghost" type="button">Clear Inline Taps</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card__title">Internal Devices (mini-bridger)</div>
-        <div class="card__desc">Insertion loss applied to THRU path.</div>
-
-        <div class="row">
-          <select id="internalPick" class="select"></select>
-          <button id="btnAddInternal" class="btn" type="button">Add Internal</button>
-          <button id="btnClearInternal" class="btn btn--ghost" type="button">Clear</button>
-        </div>
-        <div id="internalList" class="stack"></div>
-        <div class="row">
-          <div class="pill">Internal total @250: <b id="internal250">0.00</b> dB</div>
-          <div class="pill">Internal total @1000: <b id="internal1000">0.00</b> dB</div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card__title">Field Devices</div>
-        <div class="card__desc">Insertion loss applied to THRU path.</div>
-
-        <div class="row">
-          <select id="fieldPick" class="select"></select>
-          <button id="btnAddField" class="btn" type="button">Add Field</button>
-          <button id="btnClearField" class="btn btn--ghost" type="button">Clear</button>
-        </div>
-        <div id="fieldList" class="stack"></div>
-        <div class="row">
-          <div class="pill">Field total @250: <b id="field250">0.00</b> dB</div>
-          <div class="pill">Field total @1000: <b id="field1000">0.00</b> dB</div>
-        </div>
-      </div>
-
-      <div class="card card--result">
-        <div class="card__title">Results</div>
-        <div class="card__desc">Shows both 250 & 1000 results. Meter pad is always 0.</div>
-
-        <div id="resultsBox" class="results">Tap START to begin.</div>
-
-        <div class="row">
-          <button id="btnRun" class="btn btn--primary" type="button">RUN ANALYSIS</button>
-          <button id="btnCopy" class="btn" type="button">COPY</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- INFO TAB -->
-    <section id="tab-info" class="tabpage hidden">
-      <div class="card">
-        <div class="card__title">Humping</div>
-        <div class="card__desc">A signal build-up of the midband.</div>
-        <div class="note">
-          <b>Causes:</b> Over-equalizing amplifiers in the affected cascade, especially if EQ was used to correct roll-off.
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card__title">Reflections (Standing Waves)</div>
-        <div class="note">
-          Stable symmetrical peaks/valleys across the band (sometimes only high end).
-          <br><br>
-          <b>Cause:</b> Impedance mismatch (not 75Ω). Common in amps with bi-directional testpoints, bad connectors, damaged faceplates, etc.
-        </div>
-        <div class="divider"></div>
-        <div class="note">
-          A quick distance check formula:
-          <br><br>
-          <b>D = 492 (Vp / F)</b>
-          <br>
-          D in feet, Vp = velocity of propagation (% of light), F = frequency width (MHz).
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card__title">Roll-off</div>
-        <div class="note">
-          Frequency response level drop near upper or lower band edges.
-          <br><br>
-          <b>Causes:</b> loose connectors / seizure screws, loose modules, amplifier misalignment, diplex issues, bad splices (scraped center conductor), wrong band passives/EQ.
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card__title">Notch</div>
-        <div class="note">
-          Sharp (often deep) negative dip.
-          <br><br>
-          <b>Causes:</b> loose connectors, tap/coupler faceplates, amplifier modules, internal RF grounding problems.
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <script src="app.js"></script>
+  <script src="app.js" defer></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js").catch(()=>{});
+      });
+    }
+  </script>
 </body>
 </html>
