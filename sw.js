@@ -1,38 +1,50 @@
-const CACHE_NAME = "catv-terminal-v8.2";
+const CACHE = "catvcalc-v7"; // bump this if you ever want to force-refresh everyone's cache
+
 const ASSETS = [
   "./",
   "./index.html",
   "./style.css",
   "./app.js",
-  "./manifest.json",
-  "./sw.js",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png"
+  "./manifest.json"
 ];
 
-self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS)));
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(CACHE).then((cache) => cache.addAll(ASSETS))
+  );
   self.skipWaiting();
 });
 
-self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.map(k => (k === CACHE_NAME ? null : caches.delete(k)))))
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => (k !== CACHE ? caches.delete(k) : Promise.resolve())));
+      await self.clients.claim();
+    })()
   );
-  self.clients.claim();
 });
 
-self.addEventListener("fetch", (e) => {
-  e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
+self.addEventListener("fetch", (event) => {
+  const req = event.request;
+  event.respondWith(
+    (async () => {
+      const cache = await caches.open(CACHE);
+      const cached = await cache.match(req);
+      if (cached) return cached;
+
+      try {
+        const fresh = await fetch(req);
+        // Cache GET only
+        if (req.method === "GET" && fresh && fresh.status === 200) {
+          cache.put(req, fresh.clone());
+        }
+        return fresh;
+      } catch (e) {
+        // Offline fallback
+        const fallback = await cache.match("./index.html");
+        return fallback || new Response("Offline", { status: 200 });
+      }
+    })()
+  );
 });
-
-
-
-
-
-
-
-
-
-
-
