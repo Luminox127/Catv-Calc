@@ -1,5 +1,4 @@
-const CACHE = "catv-calc-v3-cache";
-
+const CACHE = "catv-calc-v4-cache";
 const ASSETS = [
   "./",
   "./index.html",
@@ -18,19 +17,18 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.map(k => (k===CACHE ? null : caches.delete(k)))))
+    caches.keys().then(keys => Promise.all(keys.map(k => (k === CACHE ? null : caches.delete(k)))))
       .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener("fetch", (event) => {
-  const req = event.request;
   event.respondWith(
-    caches.match(req).then((cached) => {
+    caches.match(event.request).then((cached) => {
       if (cached) return cached;
-      return fetch(req).then((resp) => {
+      return fetch(event.request).then((resp) => {
         const copy = resp.clone();
-        caches.open(CACHE).then((cache) => cache.put(req, copy)).catch(()=>{});
+        caches.open(CACHE).then((cache) => cache.put(event.request, copy)).catch(()=>{});
         return resp;
       }).catch(() => caches.match("./index.html"));
     })
