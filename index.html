@@ -9,8 +9,8 @@
 
   <title>CATV Calc</title>
 
-  <!-- Cache-bust so iPhone/GitHub Pages doesn't keep old code -->
-  <link rel="stylesheet" href="style.css?v=20260207" />
+  <!-- Cache-bust -->
+  <link rel="stylesheet" href="style.css?v=20260207b" />
 </head>
 
 <body>
@@ -21,7 +21,6 @@
       <div class="bootLine">CATV CALC INITIALIZING…</div>
       <div class="bootDots" id="bootDots">•••</div>
 
-      <!-- onclick fallback so Start works even if event listeners fail -->
       <button id="bootBtn" class="btn primary big" onclick="window.__STARTAPP && window.__STARTAPP(event)">Start</button>
       <div class="bootHint">Tap Start (required for sound on iPhone).</div>
     </div>
@@ -59,6 +58,27 @@
         </div>
       </div>
 
+      <!-- Mini calc (only shown on Cable Segments screen) -->
+      <div id="miniCalc" class="miniCalc hidden">
+        <div class="miniTitle">Quick Calc</div>
+        <div class="miniRow">
+          <input id="mcA" class="miniInput" type="number" inputmode="decimal" placeholder="A" />
+          <select id="mcOp" class="miniSelect">
+            <option value="+">+</option>
+            <option value="-">−</option>
+            <option value="*">×</option>
+            <option value="/">÷</option>
+          </select>
+          <input id="mcB" class="miniInput" type="number" inputmode="decimal" placeholder="B" />
+          <button id="mcEq" class="btn primary miniBtn">=</button>
+          <div id="mcOut" class="miniOut">0</div>
+        </div>
+        <div class="miniActions">
+          <button id="mcCopy" class="btn ghost miniBtn">Copy</button>
+          <button id="mcClear" class="btn ghost miniBtn">Clear</button>
+        </div>
+      </div>
+
       <div class="footer">
         <button id="backBtn" class="btn ghost">Back</button>
         <button id="showResults" class="btn primary">Results</button>
@@ -86,6 +106,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=20260207"></script>
+  <script src="app.js?v=20260207b"></script>
 </body>
 </html>
