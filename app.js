@@ -1,7 +1,7 @@
 /* ============================================================
    CATV CALC — 2026 Wizard (Dual-band auto calc)
    - Meter pad removed (ALWAYS 0)
-   - Mini calculator only on Cable Segments screen
+   - 8-input SUM mini calculator only on Cable Segments screen
    - Inline tap THRU subtraction included
    - No service worker (avoid cache/tap issues)
    ============================================================ */
@@ -34,17 +34,17 @@ const resultsWrap = document.getElementById("resultsWrap");
 const resLow = document.getElementById("resLow");
 const resHigh = document.getElementById("resHigh");
 
-// Mini calc UI
+// Mini calc wrapper (only visible on SEG_MENU)
 const miniCalc = document.getElementById("miniCalc");
-const mcA = document.getElementById("mcA");
-const mcOp = document.getElementById("mcOp");
-const mcB = document.getElementById("mcB");
-const mcEq = document.getElementById("mcEq");
-const mcOut = document.getElementById("mcOut");
-const mcCopy = document.getElementById("mcCopy");
-const mcClear = document.getElementById("mcClear");
 
-const STORAGE_KEY = "catv_calc_2026_nosw_v2";
+// 8-input SUM calculator elements (must exist in index.html)
+const sumIds = ["s1","s2","s3","s4","s5","s6","s7","s8"];
+const sumInputs = sumIds.map(id => document.getElementById(id));
+const sumOut = document.getElementById("sumOut");
+const sumCopy = document.getElementById("sumCopy");
+const sumClear = document.getElementById("sumClear");
+
+const STORAGE_KEY = "catv_calc_2026_nosw_v3";
 
 // Loss tables (dB/100ft) for 250 & 1000
 const LOSS_PER_100FT = {
@@ -155,6 +155,7 @@ function optButton(label, sub, onPick){
   b.addEventListener("click", handler);
   return b;
 }
+
 function setOptions(title, hint, opts){
   qTitle.textContent = title;
   qHint.textContent = hint || "";
@@ -164,8 +165,13 @@ function setOptions(title, hint, opts){
 }
 
 function setMiniCalcVisible(on){
-  if (on) miniCalc.classList.remove("hidden");
-  else miniCalc.classList.add("hidden");
+  if (on){
+    miniCalc.classList.remove("hidden");
+    // refresh sum immediately when opening segments screen
+    setTimeout(sumCompute, 0);
+  } else {
+    miniCalc.classList.add("hidden");
+  }
 }
 
 function setScreen(next){
@@ -445,6 +451,53 @@ function render(){
   }
 }
 
+// --------- 8-input SUM calculator ----------
+function sumCompute(){
+  if (!sumOut) return 0;
+  let total = 0;
+  for (const el of sumInputs){
+    if (!el) continue;
+    const v = parseFloat((el.value || "").trim());
+    if (Number.isFinite(v)) total += v;
+  }
+  sumOut.textContent = f2(total);
+  return total;
+}
+
+// update as you type
+sumInputs.forEach(el=>{
+  if (!el) return;
+  el.addEventListener("input", sumCompute);
+  el.addEventListener("change", sumCompute);
+});
+
+if (sumCopy){
+  sumCopy.addEventListener("click", async (e)=>{
+    e.preventDefault();
+    const txt = sumOut?.textContent || "0.00";
+    try{
+      await navigator.clipboard.writeText(txt);
+      alert("Copied: " + txt);
+    }catch{
+      const t = document.createElement("textarea");
+      t.value = txt;
+      document.body.appendChild(t);
+      t.select();
+      document.execCommand("copy");
+      t.remove();
+      alert("Copied: " + txt);
+    }
+  });
+}
+
+if (sumClear){
+  sumClear.addEventListener("click", (e)=>{
+    e.preventDefault();
+    sumInputs.forEach(el => { if (el) el.value = ""; });
+    if (sumOut) sumOut.textContent = "0.00";
+  });
+}
+
 // --------- Boot sound (simple modern chirp) ----------
 function startupSound(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -506,46 +559,6 @@ backBtn.addEventListener("click", (e)=>{ e.preventDefault(); back(); });
 showResults.addEventListener("click", (e)=>{ e.preventDefault(); showResultsNow(); });
 showResultsTop.addEventListener("click", (e)=>{ e.preventDefault(); showResultsNow(); });
 resetTop.addEventListener("click", (e)=>{ e.preventDefault(); if (confirm("Reset everything?")) resetAll(); });
-
-// Mini calc behavior
-function miniCalcCompute(){
-  const a = n(mcA.value, 0);
-  const b = n(mcB.value, 0);
-  const op = mcOp.value;
-  let out = 0;
-  if (op === "+") out = a + b;
-  else if (op === "-") out = a - b;
-  else if (op === "*") out = a * b;
-  else if (op === "/") out = (b === 0) ? NaN : a / b;
-
-  mcOut.textContent = Number.isFinite(out) ? f2(out) : "ERR";
-  return out;
-}
-mcEq.addEventListener("click", (e)=>{ e.preventDefault(); miniCalcCompute(); });
-mcCopy.addEventListener("click", async (e)=>{
-  e.preventDefault();
-  const txt = mcOut.textContent || "0";
-  try{
-    await navigator.clipboard.writeText(txt);
-    alert("Copied: " + txt);
-  }catch{
-    // fallback
-    const t = document.createElement("textarea");
-    t.value = txt;
-    document.body.appendChild(t);
-    t.select();
-    document.execCommand("copy");
-    t.remove();
-    alert("Copied: " + txt);
-  }
-});
-mcClear.addEventListener("click", (e)=>{
-  e.preventDefault();
-  mcA.value = "";
-  mcB.value = "";
-  mcOp.value = "+";
-  mcOut.textContent = "0";
-});
 
 // Load saved state
 load();
