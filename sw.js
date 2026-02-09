@@ -1,5 +1,5 @@
-// IMPORTANT: bump this version any time you change files
-const VERSION = "v4.1.0"; 
+// Bump VERSION anytime you change app.js / style.css / index.html
+const VERSION = "vA1.0.0";
 const CACHE = `catv-calc-${VERSION}`;
 
 const ASSETS = [
@@ -28,16 +28,21 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
-self.addEventListener("fetch", (event) => {
-  // Network-first for app.js / style.css so updates show fast
-  const url = new URL(event.request.url);
-  const isCore =
+// Network-first for core files so updates show quickly
+function isCore(url){
+  return (
+    url.pathname.endsWith("/index.html") ||
     url.pathname.endsWith("/app.js") ||
     url.pathname.endsWith("/style.css") ||
-    url.pathname.endsWith("/index.html") ||
-    url.pathname.endsWith("/sw.js");
+    url.pathname.endsWith("/sw.js") ||
+    url.pathname.endsWith("/manifest.json")
+  );
+}
 
-  if (isCore) {
+self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
+
+  if (isCore(url)) {
     event.respondWith((async () => {
       try {
         const fresh = await fetch(event.request, { cache: "no-store" });
@@ -52,7 +57,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Cache-first for everything else
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );
