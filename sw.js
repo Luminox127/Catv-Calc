@@ -1,7 +1,4 @@
-// Bump VERSION anytime you change app.js / style.css / index.html
-const VERSION = "vA1.0.0";
-const CACHE = `catv-calc-${VERSION}`;
-
+const CACHE = "catv-calc-v7";
 const ASSETS = [
   "./",
   "./index.html",
@@ -12,52 +9,27 @@ const ASSETS = [
   "./icons/icon-512.png"
 ];
 
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE)
-      .then((cache) => cache.addAll(ASSETS))
-      .then(() => self.skipWaiting())
+self.addEventListener("install", (e) => {
+  e.waitUntil(
+    caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting())
   );
 });
 
-self.addEventListener("activate", (event) => {
-  event.waitUntil((async () => {
-    const keys = await caches.keys();
-    await Promise.all(keys.map((k) => (k === CACHE ? null : caches.delete(k))));
-    await self.clients.claim();
-  })());
+self.addEventListener("activate", (e) => {
+  e.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.map(k => (k === CACHE ? null : caches.delete(k))))
+    ).then(() => self.clients.claim())
+  );
 });
 
-// Network-first for core files so updates show quickly
-function isCore(url){
-  return (
-    url.pathname.endsWith("/index.html") ||
-    url.pathname.endsWith("/app.js") ||
-    url.pathname.endsWith("/style.css") ||
-    url.pathname.endsWith("/sw.js") ||
-    url.pathname.endsWith("/manifest.json")
-  );
-}
-
-self.addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url);
-
-  if (isCore(url)) {
-    event.respondWith((async () => {
-      try {
-        const fresh = await fetch(event.request, { cache: "no-store" });
-        const cache = await caches.open(CACHE);
-        cache.put(event.request, fresh.clone());
-        return fresh;
-      } catch (e) {
-        const cached = await caches.match(event.request);
-        return cached || caches.match("./index.html");
-      }
-    })());
-    return;
-  }
-
-  event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request))
+self.addEventListener("fetch", (e) => {
+  const req = e.request;
+  e.respondWith(
+    caches.match(req).then((hit) => hit || fetch(req).then((res) => {
+      const copy = res.clone();
+      caches.open(CACHE).then((c) => c.put(req, copy)).catch(()=>{});
+      return res;
+    }).catch(() => caches.match("./index.html")))
   );
 });
