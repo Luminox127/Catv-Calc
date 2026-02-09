@@ -1,649 +1,896 @@
+/* CATV Calc — Wizard (1 question per screen) + Tabs: Calc / Info / AC
+   - No meter pad (always 0)
+   - Cable Segments step has mini sum calculator (8 inputs)
+*/
+
 (function () {
+  "use strict";
+
   const $ = (sel, root = document) => root.querySelector(sel);
-  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
-  const STORAGE_KEY = "catv_calc_v4_full_state";
 
-  // ---------- RF DATA ----------
-  const CABLES = [
-    { id: "RG59", name: "RG59", loss250: 4.10, loss1000: 8.12 },
-    { id: "RG6", name: "RG6", loss250: 3.30, loss1000: 6.55 },
-    { id: "RG11", name: "RG11", loss250: 2.05, loss1000: 4.35 },
-    { id: "QR540", name: "QR540", loss250: 1.03, loss1000: 2.17 },
-    { id: "P3-500", name: "P3-500", loss250: 1.20, loss1000: 2.52 },
-    { id: "P3-625", name: "P3-625", loss250: 1.00, loss1000: 2.07 },
-    { id: "P3-750", name: "P3-750", loss250: 0.81, loss1000: 1.74 },
-    { id: "P3-875", name: "P3-875", loss250: 0.72, loss1000: 1.53 },
+  // ---------- Data ----------
+  const CABLE_LOSS_DB_PER_100FT = {
+    // Values based on what you showed earlier in screenshots (250 & 1000), used as defaults.
+    // You can tweak these later.
+    RG59:  { "250": 4.10, "1000": 8.12 },
+    RG6:   { "250": 3.30, "1000": 6.55 },
+    RG11:  { "250": 2.05, "1000": 4.35 },
+    QR540: { "250": 1.03, "1000": 2.17 },
+    P3_500:{ "250": 1.20, "1000": 2.52 },
+    P3_625:{ "250": 1.00, "1000": 2.07 },
+    P3_750:{ "250": 0.81, "1000": 1.74 },
+    P3_875:{ "250": 0.72, "1000": 1.53 },
+  };
+
+  const CABLE_LABELS = [
+    ["P3_500", "P3-500"],
+    ["P3_625", "P3-625"],
+    ["P3_750", "P3-750"],
+    ["P3_875", "P3-875"],
+    ["QR540", "QR540"],
+    ["RG11", "RG11"],
+    ["RG6", "RG6"],
+    ["RG59", "RG59"],
   ];
 
-  const TAP_VALUES = [4, 8, 11, 14, 17, 20, 23, 26, 29];
-  const THRU_LOSS_OPTIONS = [0.8, 1.0, 1.2, 1.5, 1.8, 2.0, 2.4, 2.7, 3.0, 3.3];
-
-  const INTERNAL_DEVICES = [
-    { id: "none", name: "(none)", loss: 0 },
-    { id: "int_2w", name: "Internal 2-way splitter", loss: 3.5 },
-    { id: "int_dc8", name: "Internal DC-8", loss: 8.0 },
-    { id: "int_dc12", name: "Internal DC-12", loss: 12.0 },
-  ];
-
+  // Field devices (simple default losses; tweak to match your tables if you want)
   const FIELD_DEVICES = [
     { id: "none", name: "(none)", loss: 0 },
-    { id: "2w", name: "2-way splitter", loss: 3.5 },
-    { id: "3w_bal", name: "3-way balanced splitter", loss: 5.5 },
-    { id: "636", name: "3-way (6/3/6)", loss: 6.0 },
-    { id: "dc9", name: "Directional coupler DC-9", loss: 9.0 },
-    { id: "dc12", name: "Directional coupler DC-12", loss: 12.0 },
-    { id: "pwr_ins", name: "Power inserter (insertion)", loss: 1.0 },
+    { id: "split2", name: "2-way splitter", loss: 3.5 },
+    { id: "split3_bal", name: "3-way splitter (balanced)", loss: 5.5 },
+    { id: "split3_unbal_low", name: "3-way splitter (unbalanced, LOW loss port)", loss: 3.5 },
+    { id: "split3_unbal_high", name: "3-way splitter (unbalanced, HIGH loss port)", loss: 7.0 },
+    { id: "dc8", name: "Directional Coupler (DC-8)", loss: 8.0 },
+    { id: "dc9", name: "Directional Coupler (DC-9)", loss: 9.0 },
+    { id: "dc12", name: "Directional Coupler (DC-12)", loss: 12.0 },
   ];
 
-  // ---------- AC DATA (typical Ω/1000ft) ----------
-  const AC_CABLES = [
-    { id: "0.500", name: ".500", ohm_per_1000ft: 1.62 },
-    { id: "0.625", name: ".625", ohm_per_1000ft: 1.02 },
-    { id: "0.750", name: ".750", ohm_per_1000ft: 0.67 },
-    { id: "0.875", name: ".875", ohm_per_1000ft: 0.50 },
-  ];
+  // Inline taps (thru loss per tap; you can set per tap if needed)
+  const INLINE_TAP_VALUES = [4, 8, 11, 14, 17, 20, 23, 26, 29];
 
-  // ---------- WIZARD ----------
-  const STEPS = [
-    { key: "A", title: "Where is your meter reading taken?" },
-    { key: "B", title: "Enter meter readings (250 + 1000 MHz)" },
-    { key: "C", title: "Add cable segments (type + feet)" },
-    { key: "D", title: "Add inline taps (THRU loss counts)" },
-    { key: "E", title: "Select current tap (value + THRU loss)" },
-    { key: "F", title: "Add devices (internal + field)" },
-    { key: "G", title: "Results" },
-  ];
-
-  // ---------- STATE ----------
-  const defaultState = {
+  // ---------- State ----------
+  const state = {
     tab: "calc", // calc | info | ac
     step: 0,
-
-    // RF
-    meterLocation: "AT_TAP", // AT_TAP | UPSTREAM
+    // Calc wizard values
+    whereMeasured: null, // "at_tap" | "upstream"
     meter250: "",
     meter1000: "",
-    segments: [],
-    inlineTaps: [],
-    currentTapValue: 4,
-    currentTapThruLoss: 1.5,
-    internalDeviceId: "none",
-    fieldDeviceId: "none",
-
-    // AC
-    acStartVolts: "90",
-    acAmps: "4",
-    acSegments: [],
+    cableType: "P3_500",
+    segments: [], // [{ft:number}]
+    inlineTaps: [], // [{tap:number, thru:number}]
+    currentTapValue: 0,
+    currentTapThru: 0,
+    internalDevice: "none", // internal add-on loss
+    fieldDevice: "none",    // additional loss
+    // mini sum calc
+    mini: Array(8).fill(""),
+    // AC Calc
+    ac: { lengthFt:"", currentA:"", rPer1000:"", outV:"", inV:"" }
   };
 
-  let state = loadState();
-
-  function loadState() {
-    try {
+  // Persist (optional)
+  const STORAGE_KEY = "catv_calc_state_vA1";
+  function saveState(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+  }
+  function loadState(){
+    try{
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return structuredClone(defaultState);
-      const parsed = JSON.parse(raw);
-      return { ...structuredClone(defaultState), ...parsed };
-    } catch {
-      return structuredClone(defaultState);
-    }
+      if(!raw) return;
+      const s = JSON.parse(raw);
+      // shallow merge with defaults (avoid breaking if fields missing)
+      Object.assign(state, s);
+      if(!Array.isArray(state.segments)) state.segments = [];
+      if(!Array.isArray(state.inlineTaps)) state.inlineTaps = [];
+      if(!Array.isArray(state.mini)) state.mini = Array(8).fill("");
+    }catch(e){}
   }
 
-  function saveState() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }
-
-  function resetAll() {
-    state = structuredClone(defaultState);
-    saveState();
-    render();
-  }
-
-  // ---------- HELPERS ----------
-  const num = (v) => {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
+  // ---------- Helpers ----------
+  const fmt = (n, d=2) => (Number.isFinite(n) ? n.toFixed(d) : "—");
+  const toNum = (x) => {
+    const n = Number(String(x).trim());
+    return Number.isFinite(n) ? n : NaN;
   };
-  const sum = (arr) => arr.reduce((a, b) => a + b, 0);
-  const fmt = (x) => (x == null || !Number.isFinite(Number(x)) ? "—" : Number(x).toFixed(2));
-  const esc = (s) =>
-    String(s ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;");
 
-  function getDeviceLoss(list, id) {
-    const d = list.find((x) => x.id === id);
-    return d ? Number(d.loss || 0) : 0;
+  function cableLossPer100ft(cableKey, freq){
+    const table = CABLE_LOSS_DB_PER_100FT[cableKey];
+    if(!table) return NaN;
+    if(freq === 250) return table["250"];
+    if(freq === 1000) return table["1000"];
+    return NaN;
   }
 
-  function inlineThruTotal() {
-    return sum(state.inlineTaps.map((t) => Number(t.thruLoss || 0)));
+  function totalFeet(){
+    return state.segments.reduce((sum,s)=> sum + (Number(s.ft)||0), 0);
   }
 
-  function cableLoss(freq) {
-    let total = 0;
-    for (const seg of state.segments) {
-      const cable = CABLES.find((c) => c.id === seg.cableId);
-      if (!cable) continue;
-      const feet = Math.max(0, Number(seg.feet || 0));
-      const per100 = freq === 250 ? cable.loss250 : cable.loss1000;
-      total += (feet / 100) * per100;
-    }
-    return total;
+  function deviceLossById(id){
+    const d = FIELD_DEVICES.find(x=>x.id===id);
+    return d ? d.loss : 0;
+  }
+  function deviceNameById(id){
+    const d = FIELD_DEVICES.find(x=>x.id===id);
+    return d ? d.name : "(unknown)";
   }
 
-  function levelClass(x) {
-    if (x == null) return "warn";
-    if (x >= 0 && x <= 15) return "good";
-    if (x < 0) return "bad";
-    return "warn";
+  function inlineThruTotal(){
+    return state.inlineTaps.reduce((sum,t)=> sum + (Number(t.thru)||0), 0);
   }
 
-  // ---------- RF RESULTS ----------
-  function computeRF() {
-    const m250 = num(state.meter250);
-    const m1000 = num(state.meter1000);
+  // Main calc using your rule:
+  // Tap Port Output = Meter(freq) - cableLoss(freq) - inlineThruTotal - currentTapValue - internal - field
+  // (We treat "meter reading" as level at the measurement point depending on whereMeasured.)
+  function computeResults(){
+    const m250 = toNum(state.meter250);
+    const m1000 = toNum(state.meter1000);
 
-    const cable250 = cableLoss(250);
-    const cable1000 = cableLoss(1000);
-
+    // If one is missing, we still compute the other.
+    const feet = totalFeet();
     const inlineThru = inlineThruTotal();
-    const internalLoss = getDeviceLoss(INTERNAL_DEVICES, state.internalDeviceId);
-    const fieldLoss = getDeviceLoss(FIELD_DEVICES, state.fieldDeviceId);
+    const tapVal = toNum(state.currentTapValue) || 0;
 
-    const thru250 = cable250 + inlineThru + internalLoss + fieldLoss;
-    const thru1000 = cable1000 + inlineThru + internalLoss + fieldLoss;
+    const internalLoss = deviceLossById(state.internalDevice);
+    const fieldLoss = deviceLossById(state.fieldDevice);
 
-    const tapVal = Number(state.currentTapValue || 0);
-    const tapThru = Number(state.currentTapThruLoss || 0);
+    // For now, we calculate assuming the meter readings are at the start of the run if "upstream",
+    // OR at the tap (local) if "at_tap". The wizard wording helps the user choose.
+    // But the formula you want for tap port output matches "meter is upstream of run".
+    // So we compute both "Tap Port (if upstream)" and "Tap Port (if local)" clearly.
+    function calcAtFreq(freq, meter){
+      if(!Number.isFinite(meter)) return null;
+      const per100 = cableLossPer100ft(state.cableType, freq);
+      const cableLoss = Number.isFinite(per100) ? (per100 * (feet/100)) : NaN;
 
-    function calc(freq, meter, thruLoss) {
-      if (meter == null) return null;
+      const tapPort_upstream = meter - cableLoss - inlineThru - tapVal - internalLoss - fieldLoss;
+      const tapPort_local = meter - tapVal - internalLoss - fieldLoss; // if measured at tap location
 
-      let levelAtTapIn, tapPortOut, thruOutAtTap, upstreamEquivalent;
+      const thru_after_inline_upstream = meter - cableLoss - inlineThru - (toNum(state.currentTapThru)||0) - internalLoss - fieldLoss;
+      const thru_after_inline_local = meter - (toNum(state.currentTapThru)||0) - internalLoss - fieldLoss;
 
-      if (state.meterLocation === "UPSTREAM") {
-        upstreamEquivalent = meter;
-        levelAtTapIn = meter - thruLoss;
-        tapPortOut = levelAtTapIn - tapVal;
-        thruOutAtTap = levelAtTapIn - tapThru;
-      } else {
-        tapPortOut = meter; // meter taken at tap port out
-        levelAtTapIn = meter + tapVal;
-        thruOutAtTap = levelAtTapIn - tapThru;
-        upstreamEquivalent = levelAtTapIn + thruLoss;
-      }
-
-      return { freq, meter, thruLoss, levelAtTapIn, tapPortOut, thruOutAtTap, upstreamEquivalent };
+      return {
+        freq,
+        meter,
+        feet,
+        per100,
+        cableLoss,
+        inlineThru,
+        internalLoss,
+        fieldLoss,
+        tapVal,
+        tapThru: (toNum(state.currentTapThru)||0),
+        tapPort_upstream,
+        tapPort_local,
+        thru_upstream: thru_after_inline_upstream,
+        thru_local: thru_after_inline_local
+      };
     }
 
     return {
-      r250: calc(250, m250, thru250),
-      r1000: calc(1000, m1000, thru1000),
-      cable250, cable1000, inlineThru, internalLoss, fieldLoss, tapVal, tapThru,
+      r250: calcAtFreq(250, m250),
+      r1000: calcAtFreq(1000, m1000)
     };
   }
 
-  // ---------- AC RESULTS ----------
-  function acSegDrop(seg, amps) {
-    const cable = AC_CABLES.find((c) => c.id === seg.sizeId);
-    if (!cable) return 0;
-    const feet = Math.max(0, Number(seg.feet || 0));
-    const ohms = cable.ohm_per_1000ft * (feet / 1000);
-    return amps * ohms; // V = I*R
-  }
-
-  function computeAC() {
-    const startV = num(state.acStartVolts);
-    const amps = num(state.acAmps);
-    if (startV == null || amps == null) return null;
-    const drops = state.acSegments.map((s) => acSegDrop(s, amps));
-    const totalDrop = sum(drops);
-    return { startV, amps, drops, totalDrop, endV: startV - totalDrop };
-  }
-
-  // ---------- RENDER ----------
-  function render() {
-    const root = $("#app");
-    root.innerHTML = `
+  // ---------- UI Rendering ----------
+  function layout(){
+    return `
       <div class="shell">
-        ${topbarHTML()}
-        ${state.tab === "calc" ? calcHTML() : state.tab === "info" ? infoHTML() : acHTML()}
-      </div>
-    `;
-    bind();
-  }
+        <div class="topbar">
+          <div class="brand">
+            <div class="title">CATV Calc</div>
+            <div class="sub">Wizard • one question at a time • mobile-friendly</div>
+          </div>
+          <div class="tabs">
+            <button class="tab ${state.tab==="calc"?"active":""}" data-tab="calc">CATV Calc</button>
+            <button class="tab ${state.tab==="info"?"active":""}" data-tab="info">CATV Info</button>
+            <button class="tab ${state.tab==="ac"?"active":""}" data-tab="ac">AC Powering</button>
+          </div>
+        </div>
 
-  function topbarHTML() {
-    const active = (t) => (state.tab === t ? "active" : "");
-    return `
-      <div class="topbar">
-        <div class="brand">
-          <div class="title">CATV Calc</div>
-          <div class="sub">Wizard • Info • AC Powering</div>
-        </div>
-        <div class="tabs">
-          <button class="pill ${active("calc")}" data-tab="calc">CATV Calc</button>
-          <button class="pill ${active("info")}" data-tab="info">CATV Info</button>
-          <button class="pill ${active("ac")}" data-tab="ac">AC Powering</button>
-          <button class="btn danger" data-action="resetAll">Reset</button>
-        </div>
+        <div id="panel"></div>
       </div>
     `;
   }
 
-  function calcHTML() {
-    const s = STEPS[state.step];
+  function card(title, desc, bodyHtml, rightPillsHtml=""){
     return `
       <div class="card">
-        <div class="hd">
-          <div class="h1">Step ${s.key}: ${s.title}</div>
-          <div class="h2">Only this question is visible • Back / Next controls the wizard</div>
-        </div>
-        <div class="bd">
-          ${stepBody(s.key)}
-          <div class="hr"></div>
-          <div class="row tight" style="justify-content:space-between">
-            <button class="btn ghost" data-action="back" ${state.step === 0 ? "disabled" : ""}>Back</button>
-            <button class="btn primary" data-action="next" ${state.step === STEPS.length - 1 ? "disabled" : ""}>Next</button>
+        <div class="cardHeader">
+          <div>
+            <h2>${title}</h2>
+            ${desc ? `<p>${desc}</p>` : ``}
           </div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            ${rightPillsHtml}
+          </div>
+        </div>
+        <div class="cardBody">
+          ${bodyHtml}
         </div>
       </div>
     `;
   }
 
-  function stepBody(key) {
-    if (key === "A") {
-      const on = (v) => (state.meterLocation === v ? "primary" : "");
-      return `
-        <div class="row">
-          <button class="btn ${on("AT_TAP")}" data-set="meterLocation" data-val="AT_TAP">AT TAP (local)</button>
-          <button class="btn ${on("UPSTREAM")}" data-set="meterLocation" data-val="UPSTREAM">UPSTREAM (before run)</button>
-        </div>
-        <div class="small" style="margin-top:10px">
-          AT TAP = your meter reading is <b>tap port output</b>. UPSTREAM = before cable + inline THRU losses.
-        </div>
-      `;
-    }
-
-    if (key === "B") {
-      return `
-        <div class="row">
-          <div class="field">
-            <label>Meter @ 250 MHz (dBmV)</label>
-            <input id="meter250" inputmode="decimal" type="text" placeholder="ex: 34.5" value="${esc(state.meter250)}">
+  // ---------- Wizard Steps (Calc) ----------
+  const steps = [
+    function stepWhere(){
+      const body = `
+        <div class="bigChoices">
+          <div class="choice" data-set="whereMeasured" data-val="at_tap">
+            <div class="label">AT TAP (local)</div>
+            <div class="hint">You measured at the current tap location. We subtract the tap value only.</div>
           </div>
-          <div class="field">
-            <label>Meter @ 1000 MHz (dBmV)</label>
-            <input id="meter1000" inputmode="decimal" type="text" placeholder="ex: 41" value="${esc(state.meter1000)}">
+          <div class="choice" data-set="whereMeasured" data-val="upstream">
+            <div class="label">UPSTREAM (before run)</div>
+            <div class="hint">You measured before the run. We subtract cable loss + inline taps + tap value.</div>
           </div>
         </div>
+
+        <div class="actions">
+          <button class="btn danger" id="resetAll">Reset</button>
+          <button class="btn primary" id="next" ${state.whereMeasured? "":"disabled"}>Next</button>
+        </div>
       `;
-    }
+      return card(
+        "Where is your meter reading taken?",
+        "Pick one. This changes how results are interpreted.",
+        body,
+        `<span class="pill">Step 1/8</span>`
+      );
+    },
 
-    if (key === "C") {
-      const list = state.segments.length
-        ? state.segments.map((seg, i) => {
-            const c = CABLES.find((x) => x.id === seg.cableId);
-            return `
-              <div class="item">
-                <div class="left">
-                  <div class="name">${c ? c.name : "?"} • ${Number(seg.feet || 0)} ft</div>
-                  <div class="meta">Loss/100ft @250=${c ? c.loss250 : "?"} • @1000=${c ? c.loss1000 : "?"}</div>
-                </div>
-                <div class="row tight">
-                  <button class="btn danger" data-action="segDel" data-idx="${i}">Remove</button>
-                </div>
-              </div>
-            `;
-          }).join("")
-        : `<div class="item"><div class="left"><div class="name">(no segments yet)</div><div class="meta">Add a segment below</div></div></div>`;
+    function stepMeters(){
+      const body = `
+        <div class="row">
+          <div class="col">
+            <div class="field">
+              <label>Meter @ 250 MHz (dBmV)</label>
+              <input inputmode="decimal" placeholder="Example: 34.5" id="meter250" value="${escapeHtml(state.meter250)}" />
+            </div>
+          </div>
+          <div class="col">
+            <div class="field">
+              <label>Meter @ 1000 MHz (dBmV)</label>
+              <input inputmode="decimal" placeholder="Example: 41" id="meter1000" value="${escapeHtml(state.meter1000)}" />
+            </div>
+          </div>
+        </div>
 
-      return `
+        <div class="note">
+          Tip: If you only have one reading, fill just one and we’ll compute that band.
+        </div>
+
+        <div class="actions">
+          <button class="btn" id="back">Back</button>
+          <button class="btn primary" id="next" ${(state.meter250||state.meter1000)? "":"disabled"}>Next</button>
+        </div>
+      `;
+      return card("Enter your meter readings", "No meter pad. Always 0 dB compensation.", body, `<span class="pill">Step 2/8</span>`);
+    },
+
+    function stepCableType(){
+      const opts = CABLE_LABELS.map(([k,label]) =>
+        `<option value="${k}" ${state.cableType===k?"selected":""}>${label}</option>`
+      ).join("");
+
+      const body = `
         <div class="field">
-          <label>Add a segment</label>
-          <div class="row">
-            <select id="newCable">
-              ${CABLES.map((c) => `<option value="${c.id}">${c.name}</option>`).join("")}
-            </select>
-            <input id="newFeet" inputmode="numeric" type="text" placeholder="Feet (ex: 814)">
-          </div>
-          <div class="row tight" style="margin-top:8px">
-            <button class="btn primary" data-action="segAdd">Add Segment</button>
-            <button class="btn" data-action="segClear">Clear</button>
-          </div>
+          <label>Cable type</label>
+          <select id="cableType">${opts}</select>
         </div>
 
-        <div class="list">${list}</div>
-
-        <div class="row" style="margin-top:12px">
-          <div class="resBox"><div class="k">Cable loss @250</div><div class="v">${fmt(cableLoss(250))} dB</div></div>
-          <div class="resBox"><div class="k">Cable loss @1000</div><div class="v">${fmt(cableLoss(1000))} dB</div></div>
+        <div class="actions">
+          <button class="btn" id="back">Back</button>
+          <button class="btn primary" id="next">Next</button>
         </div>
       `;
-    }
+      return card("Select cable type", "Used to calculate loss at 250 & 1000.", body, `<span class="pill">Step 3/8</span>`);
+    },
 
-    if (key === "D") {
+    function stepSegments(){
+      // list segments
+      const segList = state.segments.length
+        ? state.segments.map((s,i)=> `<div class="kv"><div class="k">Segment ${i+1}</div><div class="v">${fmt(Number(s.ft),0)} ft</div></div>`).join("")
+        : `<div class="note">No segments added yet.</div>`;
+
+      const body = `
+        <div class="row">
+          <div class="col">
+            <div class="field">
+              <label>Add a cable segment (feet)</label>
+              <input inputmode="decimal" placeholder="Example: 300" id="segFt" />
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="addSeg">Add Segment</button>
+              <button class="btn danger" id="clearSegs">Clear Segments</button>
+            </div>
+
+            <div class="hr"></div>
+
+            <div class="pill">Total run: ${fmt(totalFeet(),0)} ft</div>
+            <div style="margin-top:10px;">${segList}</div>
+
+            <div class="miniCalc">
+              <h3>Quick sum (up to 8 inputs)</h3>
+              <div class="miniGrid">
+                ${state.mini.map((v,idx)=> `
+                  <input inputmode="decimal" placeholder="${idx+1}" data-mini="${idx}" value="${escapeHtml(v)}" />
+                `).join("")}
+              </div>
+              <div class="sumRow">
+                <div class="note">Use this to add multiple spans fast (example: 3+4+2+8+...)</div>
+                <div class="sumVal" id="miniSum">${fmt(miniSum(),2)}</div>
+              </div>
+              <div class="actions" style="margin-top:10px;">
+                <button class="btn" id="useMiniSum">Use sum as NEW segment</button>
+                <button class="btn" id="clearMini">Clear mini</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="col">
+            <div class="kv">
+              <div class="k">Loss/100ft @250</div>
+              <div class="v">${fmt(cableLossPer100ft(state.cableType,250),2)} dB</div>
+              <div class="k">Loss/100ft @1000</div>
+              <div class="v">${fmt(cableLossPer100ft(state.cableType,1000),2)} dB</div>
+            </div>
+            <div class="note">Cable loss = (loss per 100ft) × (total feet / 100).</div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn" id="back">Back</button>
+          <button class="btn primary" id="next" ${totalFeet()>0 ? "" : "disabled"}>Next</button>
+        </div>
+      `;
+      return card("Cable segments", "Add segments — no typing cable names, just feet.", body, `<span class="pill">Step 4/8</span>`);
+    },
+
+    function stepInlineTaps(){
+      const tapOpts = INLINE_TAP_VALUES.map(v=> `<option value="${v}">${v} dB tap</option>`).join("");
+
       const list = state.inlineTaps.length
-        ? state.inlineTaps.map((t, i) => `
-          <div class="item">
-            <div class="left">
-              <div class="name">${t.tapValue} dB tap</div>
-              <div class="meta">THRU loss: ${fmt(t.thruLoss)} dB</div>
-            </div>
-            <div class="row tight">
-              <button class="btn danger" data-action="inDel" data-idx="${i}">Remove</button>
-            </div>
-          </div>
-        `).join("")
-        : `<div class="item"><div class="left"><div class="name">(no inline taps)</div><div class="meta">Add taps in the way</div></div></div>`;
+        ? state.inlineTaps.map((t,i)=> `<div class="kv"><div class="k">Inline tap ${i+1}</div><div class="v">${t.tap} dB (THRU ${fmt(t.thru,2)} dB)</div></div>`).join("")
+        : `<div class="note">No inline taps added.</div>`;
 
-      return `
-        <div class="field">
-          <label>Add an inline tap</label>
-          <div class="row">
-            <select id="inTapVal">
-              ${TAP_VALUES.map(v => `<option value="${v}">${v}</option>`).join("")}
-            </select>
-            <select id="inThru">
-              ${THRU_LOSS_OPTIONS.map(v => `<option value="${v}">${v}</option>`).join("")}
-            </select>
-          </div>
-          <div class="row tight" style="margin-top:8px">
-            <button class="btn primary" data-action="inAdd">Add Inline Tap</button>
-            <button class="btn" data-action="inClear">Clear</button>
-          </div>
-        </div>
-
-        <div class="list">${list}</div>
-
-        <div class="row" style="margin-top:12px">
-          <div class="resBox"><div class="k">Inline taps THRU total</div><div class="v">${fmt(inlineThruTotal())} dB</div></div>
-        </div>
-      `;
-    }
-
-    if (key === "E") {
-      return `
+      const body = `
         <div class="row">
-          <div class="field">
-            <label>Current tap value (dB)</label>
-            <select id="curTapVal">
-              ${TAP_VALUES.map(v => `<option value="${v}" ${Number(state.currentTapValue)===v ? "selected":""}>${v}</option>`).join("")}
-            </select>
-          </div>
-          <div class="field">
-            <label>Current tap THRU loss (dB)</label>
-            <select id="curTapThru">
-              ${THRU_LOSS_OPTIONS.map(v => `<option value="${v}" ${Number(state.currentTapThruLoss)===v ? "selected":""}>${v}</option>`).join("")}
-            </select>
-          </div>
-        </div>
-        <div class="small">
-          Includes inline tap THRU loss on the thru path (fix you wanted).
-        </div>
-      `;
-    }
-
-    if (key === "F") {
-      return `
-        <div class="row">
-          <div class="field">
-            <label>Internal device</label>
-            <select id="intDev">
-              ${INTERNAL_DEVICES.map(d => `<option value="${d.id}" ${state.internalDeviceId===d.id?"selected":""}>${d.name} (${fmt(d.loss)} dB)</option>`).join("")}
-            </select>
-          </div>
-          <div class="field">
-            <label>Field device</label>
-            <select id="fldDev">
-              ${FIELD_DEVICES.map(d => `<option value="${d.id}" ${state.fieldDeviceId===d.id?"selected":""}>${d.name} (${fmt(d.loss)} dB)</option>`).join("")}
-            </select>
-          </div>
-        </div>
-      `;
-    }
-
-    // G results
-    const res = computeRF();
-    const band = (r) => {
-      if (!r) return `<div class="small">Enter meter readings first.</div>`;
-      return `
-        <div class="row">
-          <div class="resBox"><div class="k">Level at tap IN</div><div class="v">${fmt(r.levelAtTapIn)} dBmV</div></div>
-          <div class="resBox"><div class="k">Tap port output</div><div class="v ${levelClass(r.tapPortOut)}">${fmt(r.tapPortOut)} dBmV</div></div>
-        </div>
-        <div class="row" style="margin-top:10px">
-          <div class="resBox"><div class="k">THRU output at tap</div><div class="v">${fmt(r.thruOutAtTap)} dBmV</div></div>
-          <div class="resBox"><div class="k">Thru-path loss to tap</div><div class="v">${fmt(r.thruLoss)} dB</div></div>
-        </div>
-      `;
-    };
-
-    return `
-      <div class="grid two">
-        <div class="card" style="box-shadow:none;border-color:rgba(255,255,255,.10)">
-          <div class="hd"><div class="h1">250 MHz</div><div class="h2">${state.meterLocation}</div></div>
-          <div class="bd">${band(res.r250)}</div>
-        </div>
-        <div class="card" style="box-shadow:none;border-color:rgba(255,255,255,.10)">
-          <div class="hd"><div class="h1">1000 MHz</div><div class="h2">${state.meterLocation}</div></div>
-          <div class="bd">${band(res.r1000)}</div>
-        </div>
-      </div>
-
-      <div class="hr"></div>
-      <div class="row">
-        <div class="resBox"><div class="k">Cable loss @250</div><div class="v">${fmt(res.cable250)} dB</div></div>
-        <div class="resBox"><div class="k">Inline THRU total</div><div class="v">${fmt(res.inlineThru)} dB</div></div>
-      </div>
-      <div class="row" style="margin-top:10px">
-        <div class="resBox"><div class="k">Internal loss</div><div class="v">${fmt(res.internalLoss)} dB</div></div>
-        <div class="resBox"><div class="k">Field loss</div><div class="v">${fmt(res.fieldLoss)} dB</div></div>
-      </div>
-    `;
-  }
-
-  function infoHTML() {
-    return `
-      <div class="card">
-        <div class="hd">
-          <div class="h1">CATV Info</div>
-          <div class="h2">Quick reference</div>
-        </div>
-        <div class="bd">
-          <div class="resBox"><div class="k">Humping</div><div class="small">Midband build-up. Often over-equalizing amps in cascade.</div></div>
-          <div class="resBox" style="margin-top:10px"><div class="k">Reflections</div><div class="small">Standing waves from impedance mismatch (not 75Ω).</div></div>
-          <div class="resBox" style="margin-top:10px"><div class="k">High-end roll-off</div><div class="small">Loose connectors/modules, diplex, bad splices, wrong passives.</div></div>
-          <div class="resBox" style="margin-top:10px"><div class="k">Notch</div><div class="small">Sharp dip: loose connectors, bad faceplates/modules, grounding.</div></div>
-        </div>
-      </div>
-    `;
-  }
-
-  function acHTML() {
-    const res = computeAC();
-    const list = state.acSegments.length
-      ? state.acSegments.map((seg, i) => {
-          const c = AC_CABLES.find((x) => x.id === seg.sizeId);
-          const amps = num(state.acAmps) ?? 0;
-          const drop = acSegDrop(seg, amps);
-          return `
-            <div class="item">
-              <div class="left">
-                <div class="name">${c ? c.name : "?"} • ${Number(seg.feet || 0)} ft</div>
-                <div class="meta">Drop @ ${amps}A: ${fmt(drop)} V</div>
-              </div>
-              <div class="row tight">
-                <button class="btn danger" data-action="acDel" data-idx="${i}">Remove</button>
-              </div>
-            </div>
-          `;
-        }).join("")
-      : `<div class="item"><div class="left"><div class="name">(no AC segments yet)</div><div class="meta">Add segments below</div></div></div>`;
-
-    return `
-      <div class="card">
-        <div class="hd">
-          <div class="h1">AC Powering</div>
-          <div class="h2">Voltage drop estimate</div>
-        </div>
-        <div class="bd">
-          <div class="row">
+          <div class="col">
             <div class="field">
-              <label>Start voltage (VAC)</label>
-              <input id="acStart" inputmode="decimal" type="text" value="${esc(state.acStartVolts)}" placeholder="ex: 90">
+              <label>Inline tap value</label>
+              <select id="inlineTapVal">${tapOpts}</select>
             </div>
             <div class="field">
-              <label>Load current (amps)</label>
-              <input id="acAmps" inputmode="decimal" type="text" value="${esc(state.acAmps)}" placeholder="ex: 4">
+              <label>Inline tap THRU loss (dB)</label>
+              <input inputmode="decimal" id="inlineTapThru" value="1.5" />
             </div>
+
+            <div class="actions">
+              <button class="btn primary" id="addInline">Add Inline Tap</button>
+              <button class="btn danger" id="clearInline">Clear Inline Taps</button>
+            </div>
+
+            <div class="hr"></div>
+            <div class="pill">Inline THRU total: ${fmt(inlineThruTotal(),2)} dB</div>
+            <div style="margin-top:10px;">${list}</div>
           </div>
 
-          <div class="field">
-            <label>Add AC segment</label>
-            <div class="row">
-              <select id="acSize">
-                ${AC_CABLES.map((c) => `<option value="${c.id}">${c.name}</option>`).join("")}
+          <div class="col">
+            <div class="note">
+              Inline taps THRU loss is subtracted on the THRU path. <br/>
+              Your requested formula uses inline THRU total in the tap-port calculation when reading is upstream.
+            </div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn" id="back">Back</button>
+          <button class="btn primary" id="next">Next</button>
+        </div>
+      `;
+      return card("Inline taps in the run", "Add any taps that are in the way (THRU losses).", body, `<span class="pill">Step 5/8</span>`);
+    },
+
+    function stepCurrentTap(){
+      const body = `
+        <div class="row">
+          <div class="col">
+            <div class="field">
+              <label>Current tap value (dB)</label>
+              <select id="curTapVal">
+                ${INLINE_TAP_VALUES.map(v=> `<option value="${v}" ${Number(state.currentTapValue)===v?"selected":""}>${v} dB</option>`).join("")}
               </select>
-              <input id="acFeet" inputmode="numeric" type="text" placeholder="Feet (ex: 1200)">
             </div>
-            <div class="row tight" style="margin-top:8px">
-              <button class="btn primary" data-action="acAdd">Add Segment</button>
-              <button class="btn" data-action="acClear">Clear</button>
-            </div>
-            <div class="small">Model: Vdrop = I × (Ω/1000ft × ft/1000)</div>
           </div>
-
-          <div class="list">${list}</div>
-
-          <div class="row" style="margin-top:12px">
-            <div class="resBox"><div class="k">Total drop</div><div class="v">${res ? fmt(res.totalDrop) : "—"} V</div></div>
-            <div class="resBox"><div class="k">End voltage</div><div class="v ${res ? (res.endV < 60 ? "bad" : "good") : ""}">${res ? fmt(res.endV) : "—"} VAC</div></div>
+          <div class="col">
+            <div class="field">
+              <label>Current tap THRU loss (dB)</label>
+              <input inputmode="decimal" id="curTapThru" value="${escapeHtml(String(state.currentTapThru||"1.5"))}" />
+            </div>
           </div>
         </div>
+
+        <div class="note">
+          Tap PORT output subtracts tap value. THRU output subtracts tap THRU loss.
+        </div>
+
+        <div class="actions">
+          <button class="btn" id="back">Back</button>
+          <button class="btn primary" id="next">Next</button>
+        </div>
+      `;
+      return card("Current tap", "Set the tap you’re working on.", body, `<span class="pill">Step 6/8</span>`);
+    },
+
+    function stepDevices(){
+      const opts = FIELD_DEVICES.map(d=> `<option value="${d.id}" ${state.internalDevice===d.id?"selected":""}>${d.name} (${d.loss} dB)</option>`).join("");
+      const opts2 = FIELD_DEVICES.map(d=> `<option value="${d.id}" ${state.fieldDevice===d.id?"selected":""}>${d.name} (${d.loss} dB)</option>`).join("");
+
+      const body = `
+        <div class="row">
+          <div class="col">
+            <div class="field">
+              <label>Internal device loss (inside mini-bridger)</label>
+              <select id="internalDevice">${opts}</select>
+            </div>
+            <div class="note">You asked for internal: 2-way, DC-8, DC-12. (We include those.)</div>
+          </div>
+
+          <div class="col">
+            <div class="field">
+              <label>Field device loss (in the field)</label>
+              <select id="fieldDevice">${opts2}</select>
+            </div>
+            <div class="note">Includes splitters + DC-8/9/12. You can expand later.</div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn" id="back">Back</button>
+          <button class="btn primary" id="next">Next</button>
+        </div>
+      `;
+      return card("Devices / passives", "Add losses from splitters / DCs / etc.", body, `<span class="pill">Step 7/8</span>`);
+    },
+
+    function stepResults(){
+      const res = computeResults();
+
+      const pill = `<span class="pill">Step 8/8</span>`;
+      const body = `
+        <div class="note">
+          Showing both interpretations:
+          <b>UPSTREAM</b> assumes meter was before the run (subtract cable + inline THRU + tap value).  
+          <b>AT TAP</b> assumes meter is local at the tap (subtract tap value only).
+        </div>
+
+        ${renderBand(res.r250)}
+        ${renderBand(res.r1000)}
+
+        <div class="actions">
+          <button class="btn" id="back">Back</button>
+          <button class="btn danger" id="resetAll">Reset</button>
+        </div>
+      `;
+      return card("Results", "Your numbers, clean and explicit.", body, pill);
+    }
+  ];
+
+  function renderBand(r){
+    if(!r) return "";
+    const mode = state.whereMeasured;
+
+    // Your exact target when upstream:
+    // meter - cableLoss - inlineThru - tapVal (and devices)
+    const tapPortPreferred = (mode === "upstream") ? r.tapPort_upstream : r.tapPort_local;
+
+    return `
+      <div class="hr"></div>
+      <div class="pill">${r.freq} MHz</div>
+
+      <div class="kv" style="margin-top:10px;">
+        <div class="k">Meter</div>
+        <div class="v">${fmt(r.meter,2)} dBmV</div>
+
+        <div class="k">Total cable</div>
+        <div class="v">${fmt(r.feet,0)} ft</div>
+
+        <div class="k">Cable loss</div>
+        <div class="v">${fmt(r.cableLoss,2)} dB</div>
+
+        <div class="k">Inline taps THRU total</div>
+        <div class="v">${fmt(r.inlineThru,2)} dB</div>
+
+        <div class="k">Current tap value</div>
+        <div class="v">${fmt(r.tapVal,2)} dB</div>
+
+        <div class="k">Internal device</div>
+        <div class="v">${deviceNameById(state.internalDevice)} (${fmt(r.internalLoss,2)} dB)</div>
+
+        <div class="k">Field device</div>
+        <div class="v">${deviceNameById(state.fieldDevice)} (${fmt(r.fieldLoss,2)} dB)</div>
+      </div>
+
+      <div class="kv" style="margin-top:12px;">
+        <div class="k">Tap PORT (preferred for your selection: ${mode === "upstream" ? "UPSTREAM" : "AT TAP"})</div>
+        <div class="v">${fmt(tapPortPreferred,2)} dBmV</div>
+
+        <div class="k">Tap PORT (UPSTREAM formula)</div>
+        <div class="v">${fmt(r.tapPort_upstream,2)} dBmV</div>
+
+        <div class="k">Tap PORT (AT TAP local)</div>
+        <div class="v">${fmt(r.tapPort_local,2)} dBmV</div>
+
+        <div class="k">THRU output (UPSTREAM)</div>
+        <div class="v">${fmt(r.thru_upstream,2)} dBmV</div>
+
+        <div class="k">THRU output (AT TAP local)</div>
+        <div class="v">${fmt(r.thru_local,2)} dBmV</div>
       </div>
     `;
   }
 
-  // ---------- EVENTS ----------
-  function bind() {
-    $$("[data-tab]").forEach((b) =>
-      b.addEventListener("click", () => {
-        state.tab = b.getAttribute("data-tab");
-        saveState();
-        render();
-      })
-    );
+  // ---------- CATV Info Tab ----------
+  function renderInfoTab(){
+    const body = `
+      <div class="note">
+        Quick reference notes you can expand. (No copyrighted text copied verbatim.)
+      </div>
 
-    const reset = $("[data-action='resetAll']");
-    if (reset) reset.addEventListener("click", resetAll);
-
-    const back = $("[data-action='back']");
-    const next = $("[data-action='next']");
-    if (back)
-      back.addEventListener("click", () => {
-        state.step = Math.max(0, state.step - 1);
-        saveState();
-        render();
-      });
-    if (next)
-      next.addEventListener("click", () => {
-        state.step = Math.min(STEPS.length - 1, state.step + 1);
-        saveState();
-        render();
-      });
-
-    $$("[data-set='meterLocation']").forEach((btn) =>
-      btn.addEventListener("click", () => {
-        state.meterLocation = btn.getAttribute("data-val");
-        saveState();
-        render();
-      })
-    );
-
-    const m250 = $("#meter250");
-    const m1000 = $("#meter1000");
-    if (m250) m250.addEventListener("input", (e) => { state.meter250 = e.target.value; saveState(); });
-    if (m1000) m1000.addEventListener("input", (e) => { state.meter1000 = e.target.value; saveState(); });
-
-    // Segments
-    const segAdd = $("[data-action='segAdd']");
-    if (segAdd) segAdd.addEventListener("click", () => {
-      const cableId = $("#newCable").value;
-      const feet = Number(($("#newFeet").value || "").trim());
-      if (!Number.isFinite(feet) || feet <= 0) return alert("Enter valid feet.");
-      state.segments.push({ cableId, feet });
-      $("#newFeet").value = "";
-      saveState(); render();
-    });
-
-    const segClear = $("[data-action='segClear']");
-    if (segClear) segClear.addEventListener("click", () => { state.segments = []; saveState(); render(); });
-
-    $$("[data-action='segDel']").forEach((btn) => btn.addEventListener("click", () => {
-      const idx = Number(btn.getAttribute("data-idx"));
-      state.segments.splice(idx, 1);
-      saveState(); render();
-    }));
-
-    // Inline taps
-    const inAdd = $("[data-action='inAdd']");
-    if (inAdd) inAdd.addEventListener("click", () => {
-      const tapValue = Number($("#inTapVal").value);
-      const thruLoss = Number($("#inThru").value);
-      state.inlineTaps.push({ tapValue, thruLoss });
-      saveState(); render();
-    });
-
-    const inClear = $("[data-action='inClear']");
-    if (inClear) inClear.addEventListener("click", () => { state.inlineTaps = []; saveState(); render(); });
-
-    $$("[data-action='inDel']").forEach((btn) => btn.addEventListener("click", () => {
-      const idx = Number(btn.getAttribute("data-idx"));
-      state.inlineTaps.splice(idx, 1);
-      saveState(); render();
-    }));
-
-    // Current tap
-    const curTapVal = $("#curTapVal");
-    const curTapThru = $("#curTapThru");
-    if (curTapVal) curTapVal.addEventListener("change", () => { state.currentTapValue = Number(curTapVal.value); saveState(); });
-    if (curTapThru) curTapThru.addEventListener("change", () => { state.currentTapThruLoss = Number(curTapThru.value); saveState(); });
-
-    // Devices
-    const intDev = $("#intDev");
-    const fldDev = $("#fldDev");
-    if (intDev) intDev.addEventListener("change", () => { state.internalDeviceId = intDev.value; saveState(); });
-    if (fldDev) fldDev.addEventListener("change", () => { state.fieldDeviceId = fldDev.value; saveState(); });
-
-    // AC
-    const acStart = $("#acStart");
-    const acAmps = $("#acAmps");
-    if (acStart) acStart.addEventListener("input", (e) => { state.acStartVolts = e.target.value; saveState(); render(); });
-    if (acAmps) acAmps.addEventListener("input", (e) => { state.acAmps = e.target.value; saveState(); render(); });
-
-    const acAdd = $("[data-action='acAdd']");
-    if (acAdd) acAdd.addEventListener("click", () => {
-      const sizeId = $("#acSize").value;
-      const feet = Number(($("#acFeet").value || "").trim());
-      if (!Number.isFinite(feet) || feet <= 0) return alert("Enter valid feet.");
-      state.acSegments.push({ sizeId, feet });
-      $("#acFeet").value = "";
-      saveState(); render();
-    });
-
-    const acClear = $("[data-action='acClear']");
-    if (acClear) acClear.addEventListener("click", () => { state.acSegments = []; saveState(); render(); });
-
-    $$("[data-action='acDel']").forEach((btn) => btn.addEventListener("click", () => {
-      const idx = Number(btn.getAttribute("data-idx"));
-      state.acSegments.splice(idx, 1);
-      saveState(); render();
-    }));
+      <div class="infoList">
+        <div class="infoItem">
+          <h4>Humping</h4>
+          <p>Build-up through midband. Often caused by over-equalization / incorrect roll-off correction across cascades.</p>
+        </div>
+        <div class="infoItem">
+          <h4>Reflections (Standing waves)</h4>
+          <p>Regular ripples/peaks across the band (sometimes more visible at higher freq). Common cause: impedance mismatch (not 75Ω) at some point.</p>
+        </div>
+        <div class="infoItem">
+          <h4>High-end Roll-off</h4>
+          <p>Level drops near top of band. Causes can include loose connectors, loose modules, diplex/filter problems, bad splices, wrong passives for band.</p>
+        </div>
+        <div class="infoItem">
+          <h4>Notch</h4>
+          <p>Sharp narrow dip. Often from loose connectors, bad faceplates/tap hardware, or internal grounding issues.</p>
+        </div>
+        <div class="infoItem">
+          <h4>Standing wave distance formula</h4>
+          <p>Used to estimate distance to a fault from ripple spacing in sweep response.</p>
+          <div class="code">D = 492 × (Vp / F)</div>
+          <p class="note">D in feet, Vp as velocity of propagation ratio (e.g. 0.87), F is ripple spacing (MHz).</p>
+        </div>
+      </div>
+    `;
+    return card("CATV Info", "Troubleshooting patterns + quick formulas.", body, `<span class="pill">Reference</span>`);
   }
+
+  // ---------- AC Powering Tab ----------
+  function renderACTab(){
+    const body = `
+      <div class="row">
+        <div class="col">
+          <div class="field">
+            <label>Input voltage at supply (VAC)</label>
+            <input inputmode="decimal" id="acInV" placeholder="Example: 90" value="${escapeHtml(state.ac.inV)}" />
+          </div>
+          <div class="field">
+            <label>Run length (feet)</label>
+            <input inputmode="decimal" id="acLen" placeholder="Example: 1200" value="${escapeHtml(state.ac.lengthFt)}" />
+          </div>
+          <div class="field">
+            <label>Load current (amps)</label>
+            <input inputmode="decimal" id="acA" placeholder="Example: 8" value="${escapeHtml(state.ac.currentA)}" />
+          </div>
+          <div class="field">
+            <label>Cable resistance (ohms per 1000 ft)</label>
+            <input inputmode="decimal" id="acR" placeholder="Example: 3.2" value="${escapeHtml(state.ac.rPer1000)}" />
+          </div>
+
+          <div class="actions">
+            <button class="btn primary" id="acCalc">Calculate</button>
+            <button class="btn danger" id="acClear">Clear</button>
+          </div>
+          <div class="note">
+            Formula (single-phase AC approximation):<br/>
+            <span class="code">Vdrop = I × R × (length/1000)</span><br/>
+            If you want “round trip” (out + back), enter resistance that already includes both conductors, or double it.
+          </div>
+        </div>
+
+        <div class="col">
+          ${renderACResults()}
+        </div>
+      </div>
+    `;
+    return card("AC Powering", "Quick voltage drop estimate for plant powering.", body, `<span class="pill">Tools</span>`);
+  }
+
+  function renderACResults(){
+    const inV = toNum(state.ac.inV);
+    const len = toNum(state.ac.lengthFt);
+    const a = toNum(state.ac.currentA);
+    const r = toNum(state.ac.rPer1000);
+
+    if(!Number.isFinite(inV) || !Number.isFinite(len) || !Number.isFinite(a) || !Number.isFinite(r)){
+      return `<div class="note">Enter values and tap Calculate.</div>`;
+    }
+    const vdrop = a * r * (len/1000);
+    const outV = inV - vdrop;
+
+    return `
+      <div class="kv">
+        <div class="k">Voltage drop</div><div class="v">${fmt(vdrop,2)} VAC</div>
+        <div class="k">Estimated voltage at load</div><div class="v">${fmt(outV,2)} VAC</div>
+      </div>
+      <div class="note">
+        If this doesn’t match field readings, tell me your cable type + conductor size and whether you want round-trip modeled.
+      </div>
+    `;
+  }
+
+  // ---------- Events ----------
+  function bindCommon(){
+    // Tabs
+    document.querySelectorAll(".tab").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const t = btn.getAttribute("data-tab");
+        state.tab = t;
+        saveState();
+        render();
+      });
+    });
+  }
+
+  function bindCalcStep(){
+    const panel = $("#panel");
+    if(!panel) return;
+
+    // choices
+    panel.querySelectorAll(".choice[data-set]").forEach(el=>{
+      el.addEventListener("click", ()=>{
+        const key = el.getAttribute("data-set");
+        const val = el.getAttribute("data-val");
+        state[key] = val;
+        saveState();
+        render();
+      });
+    });
+
+    // back/next/reset
+    const back = $("#back", panel);
+    if(back) back.addEventListener("click", ()=>{
+      state.step = Math.max(0, state.step - 1);
+      saveState();
+      render();
+    });
+
+    const next = $("#next", panel);
+    if(next) next.addEventListener("click", ()=>{
+      state.step = Math.min(steps.length - 1, state.step + 1);
+      saveState();
+      render();
+    });
+
+    const resetAll = $("#resetAll", panel);
+    if(resetAll) resetAll.addEventListener("click", ()=>{
+      // reset calc-only fields, keep tab
+      const keepTab = state.tab;
+      Object.assign(state, {
+        tab: keepTab,
+        step: 0,
+        whereMeasured: null,
+        meter250: "",
+        meter1000: "",
+        cableType: "P3_500",
+        segments: [],
+        inlineTaps: [],
+        currentTapValue: 0,
+        currentTapThru: 0,
+        internalDevice: "none",
+        fieldDevice: "none",
+        mini: Array(8).fill("")
+      });
+      saveState();
+      render();
+    });
+
+    // Step-specific bindings
+    const s = state.step;
+
+    if(s === 1){
+      const i250 = $("#meter250", panel);
+      const i1000 = $("#meter1000", panel);
+      if(i250) i250.addEventListener("input", (e)=>{ state.meter250 = e.target.value; saveState(); renderQuickEnableNext(); });
+      if(i1000) i1000.addEventListener("input", (e)=>{ state.meter1000 = e.target.value; saveState(); renderQuickEnableNext(); });
+    }
+
+    if(s === 2){
+      const sel = $("#cableType", panel);
+      if(sel) sel.addEventListener("change", (e)=>{ state.cableType = e.target.value; saveState(); render(); });
+    }
+
+    if(s === 3){
+      const segFt = $("#segFt", panel);
+      const addSeg = $("#addSeg", panel);
+      const clearSegs = $("#clearSegs", panel);
+
+      if(addSeg) addSeg.addEventListener("click", ()=>{
+        const ft = toNum(segFt ? segFt.value : "");
+        if(!Number.isFinite(ft) || ft <= 0) return;
+        state.segments.push({ft});
+        if(segFt) segFt.value = "";
+        saveState();
+        render();
+      });
+      if(clearSegs) clearSegs.addEventListener("click", ()=>{
+        state.segments = [];
+        saveState();
+        render();
+      });
+
+      // mini sum inputs
+      panel.querySelectorAll("input[data-mini]").forEach(inp=>{
+        inp.addEventListener("input", (e)=>{
+          const idx = Number(e.target.getAttribute("data-mini"));
+          state.mini[idx] = e.target.value;
+          saveState();
+          const sumEl = $("#miniSum", panel);
+          if(sumEl) sumEl.textContent = fmt(miniSum(),2);
+        });
+      });
+
+      const useMini = $("#useMiniSum", panel);
+      if(useMini) useMini.addEventListener("click", ()=>{
+        const sum = miniSum();
+        if(!Number.isFinite(sum) || sum <= 0) return;
+        state.segments.push({ft: sum});
+        saveState();
+        render();
+      });
+
+      const clearMini = $("#clearMini", panel);
+      if(clearMini) clearMini.addEventListener("click", ()=>{
+        state.mini = Array(8).fill("");
+        saveState();
+        render();
+      });
+    }
+
+    if(s === 4){
+      const addInline = $("#addInline", panel);
+      const clearInline = $("#clearInline", panel);
+      const valSel = $("#inlineTapVal", panel);
+      const thruInp = $("#inlineTapThru", panel);
+
+      if(addInline) addInline.addEventListener("click", ()=>{
+        const tap = toNum(valSel ? valSel.value : "");
+        const thru = toNum(thruInp ? thruInp.value : "");
+        if(!Number.isFinite(tap)) return;
+        const thruLoss = Number.isFinite(thru) ? thru : 1.5;
+        state.inlineTaps.push({tap, thru: thruLoss});
+        saveState();
+        render();
+      });
+
+      if(clearInline) clearInline.addEventListener("click", ()=>{
+        state.inlineTaps = [];
+        saveState();
+        render();
+      });
+    }
+
+    if(s === 5){
+      const curVal = $("#curTapVal", panel);
+      const curThru = $("#curTapThru", panel);
+
+      if(curVal) curVal.addEventListener("change", (e)=>{
+        state.currentTapValue = toNum(e.target.value) || 0;
+        saveState();
+      });
+      if(curThru) curThru.addEventListener("input", (e)=>{
+        state.currentTapThru = e.target.value;
+        saveState();
+      });
+    }
+
+    if(s === 6){
+      const internal = $("#internalDevice", panel);
+      const field = $("#fieldDevice", panel);
+      if(internal) internal.addEventListener("change",(e)=>{ state.internalDevice = e.target.value; saveState(); });
+      if(field) field.addEventListener("change",(e)=>{ state.fieldDevice = e.target.value; saveState(); });
+    }
+
+    function renderQuickEnableNext(){
+      const n = $("#next", panel);
+      if(!n) return;
+      n.disabled = !(state.meter250 || state.meter1000);
+    }
+  }
+
+  function bindACTab(){
+    const panel = $("#panel");
+    if(!panel) return;
+
+    const inV = $("#acInV", panel);
+    const len = $("#acLen", panel);
+    const a = $("#acA", panel);
+    const r = $("#acR", panel);
+
+    [inV,len,a,r].forEach((el)=>{
+      if(!el) return;
+      el.addEventListener("input",(e)=>{
+        if(el === inV) state.ac.inV = e.target.value;
+        if(el === len) state.ac.lengthFt = e.target.value;
+        if(el === a) state.ac.currentA = e.target.value;
+        if(el === r) state.ac.rPer1000 = e.target.value;
+        saveState();
+      });
+    });
+
+    const calc = $("#acCalc", panel);
+    if(calc) calc.addEventListener("click", ()=>{
+      saveState();
+      render(); // re-render to show results
+    });
+
+    const clear = $("#acClear", panel);
+    if(clear) clear.addEventListener("click", ()=>{
+      state.ac = { lengthFt:"", currentA:"", rPer1000:"", outV:"", inV:"" };
+      saveState();
+      render();
+    });
+  }
+
+  // ---------- Render ----------
+  function render(){
+    const root = $("#app");
+    root.innerHTML = layout();
+
+    const panel = $("#panel");
+    if(state.tab === "calc"){
+      const html = steps[state.step]();
+      panel.innerHTML = html;
+      bindCommon();
+      bindCalcStep();
+    } else if(state.tab === "info"){
+      panel.innerHTML = renderInfoTab();
+      bindCommon();
+    } else if(state.tab === "ac"){
+      panel.innerHTML = renderACTab();
+      bindCommon();
+      bindACTab();
+    }
+  }
+
+  // ---------- Mini sum ----------
+  function miniSum(){
+    let sum = 0;
+    for(const v of state.mini){
+      const n = toNum(v);
+      if(Number.isFinite(n)) sum += n;
+    }
+    return sum;
+  }
+
+  // ---------- Escape ----------
+  function escapeHtml(s){
+    return String(s ?? "")
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#039;");
+  }
+
+  // ---------- Boot ----------
+  loadState();
+  // Make sure step is valid
+  if(!Number.isFinite(state.step) || state.step<0 || state.step>=steps.length) state.step = 0;
+  if(!["calc","info","ac"].includes(state.tab)) state.tab = "calc";
 
   render();
 })();
