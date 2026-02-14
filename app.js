@@ -1,677 +1,187 @@
-/* CATV Calc - Wizard + Tabs (CATV Calc / CATV Info / AC Power)
-   - Dual-band inputs: 250 + 1000 only (no frequency chooser)
-   - Meter pad removed (always 0)
-   - Wizard: one step at a time
-   - Cable Segments step includes mini 8-input add calculator
+/*  CATV Calc — Questionnaire Wizard + Tabs (CATV Calc / CATV Info / AC Power)
+    - Mobile-first, tap-only (no typing except numbers)
+    - Dual-band inputs: 250 + 1000 (no frequency chooser)
+    - Meter pad removed (always 0)
+    - Cable segments step supports multiple segments + mini 8-input adder
+    - Inline taps: counts THRU losses correctly (THRU path) + optional current tap THRU loss
+    - Current tap value affects TAP PORT output (and can be used for “tap-port expectation”)
+    - Passives (field/internal): choose from list; each has loss @250 and @1000
+    - CATV Info tab: your “Humping / Reflections / Roll-off / Notch” + standing-wave distance formula
+    - AC Power tab: voltage drop + pass/fail to 60/63/70/75/87/90VAC targets (simple model)
 */
 
 (() => {
+  "use strict";
+
+  // ---------------------------
+  // Helpers
+  // ---------------------------
   const $ = (sel) => document.querySelector(sel);
+  const el = (tag, cls, html) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (html !== undefined) n.innerHTML = html;
+    return n;
+  };
+  const safeNum = (v) => {
+    const n = parseFloat(String(v ?? "").replace(/[^\d.-]/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  };
+  const fmt = (n, d = 2) => (Number.isFinite(n) ? n.toFixed(d) : "0.00");
+  const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 
-  // ---------- Data ----------
-  // Cable loss @ 250 and @ 1000 per 100 ft (based on your screenshots / typical tables)
-  // You can tweak any numbers later.
+  // ---------------------------
+  // Data: Cable loss (dB / 100 ft) @ 250 and @ 1000
+  // From your screenshots (examples). Tweak anytime.
+  // ---------------------------
   const CABLES = [
-    { id:"RG59", label:"RG59", loss250:4.10, loss1000:8.12 },
-    { id:"RG6",  label:"RG6",  loss250:3.30, loss1000:6.55 },
-    { id:"RG11", label:"RG11", loss250:2.05, loss1000:4.35 },
-    { id:"QR540",label:"QR540",loss250:1.03, loss1000:2.17 },
-    { id:"P3-500",label:"P3-500",loss250:1.20, loss1000:2.52 },
-    { id:"P3-625",label:"P3-625",loss250:1.00, loss1000:2.07 },
-    { id:"P3-750",label:"P3-750",loss250:0.81, loss1000:1.74 },
-    { id:"P3-875",label:"P3-875",loss250:0.72, loss1000:1.53 }
+    { id: "RG59", label: "RG59", loss250: 4.10, loss1000: 8.12 },
+    { id: "RG6", label: "RG6", loss250: 3.30, loss1000: 6.55 },
+    { id: "RG11", label: "RG11", loss250: 2.05, loss1000: 4.35 },
+    { id: "QR540", label: "QR540", loss250: 1.03, loss1000: 2.17 },
+    { id: "P3-500", label: "P3-500", loss250: 1.20, loss1000: 2.52 },
+    { id: "P3-625", label: "P3-625", loss250: 1.00, loss1000: 2.07 },
+    { id: "P3-750", label: "P3-750", loss250: 0.81, loss1000: 1.74 },
+    { id: "P3-875", label: "P3-875", loss250: 0.72, loss1000: 1.53 },
   ];
 
-  // Devices (field passives / internal) – starter set; you can expand any time
-  const INTERNAL_DEVICES = [
-    { id:"none", label:"(none)", loss:0 },
-    { id:"dc8", label:"DC-8 (internal)", loss:8 },
-    { id:"dc12", label:"DC-12 (internal)", loss:12 },
-    { id:"2w-internal", label:"2-way splitter (internal)", loss:3.5 }
+  // ---------------------------
+  // Data: Inline tap THRU loss defaults (dB) — if you want a default
+  // You can still override per tap in UI.
+  // ---------------------------
+  const DEFAULT_INLINE_THRU_DB = 1.5;
+
+  // ---------------------------
+  // Data: Passives (loss @250 and @1000)
+  // NOTE: replace numbers with your exact ATX table if you want.
+  // These are “reasonable defaults” and can be edited later.
+  // ---------------------------
+  const PASSIVES = [
+    // Splitters
+    { id: "2W_SPL", label: "2-way Splitter", loss250: 4.2, loss1000: 5.0, group: "Splitters" },
+    { id: "3W_BAL", label: "3-way Balanced", loss250: 4.5, loss1000: 5.1, group: "Splitters" },
+    { id: "3W_636", label: "3-way 636 (unbalanced)", loss250: 6.3, loss1000: 6.9, group: "Splitters" },
+
+    // Directional couplers (DC)
+    { id: "DC-8", label: "DC-8", loss250: 1.9, loss1000: 2.3, group: "Directional Couplers" },
+    { id: "DC-12", label: "DC-12", loss250: 1.6, loss1000: 2.0, group: "Directional Couplers" },
+    { id: "DC-9", label: "DC-9", loss250: 1.8, loss1000: 2.2, group: "Directional Couplers" },
+
+    // Couplers / misc
+    { id: "COUP_8", label: "Coupler 8 dB", loss250: 0.8, loss1000: 1.2, group: "Couplers" },
+    { id: "COUP_12", label: "Coupler 12 dB", loss250: 0.9, loss1000: 1.3, group: "Couplers" },
+    { id: "PI", label: "Power Inserter (passive RF loss)", loss250: 1.0, loss1000: 1.4, group: "Power" },
   ];
 
-  const FIELD_DEVICES = [
-    { id:"none", label:"(none)", loss:0 },
-    { id:"2w", label:"2-way splitter", loss:3.5 },
-    { id:"2w-bal", label:"2-way balanced splitter", loss:3.5 },
-    { id:"3w-636", label:"3-way (6/3/6)", loss:6 },     // main loss reference; you can refine per port later
-    { id:"dc8", label:"DC-8 (field)", loss:8 },
-    { id:"dc9", label:"DC-9 (field)", loss:9 },
-    { id:"dc12", label:"DC-12 (field)", loss:12 }
+  // ---------------------------
+  // AC Power: simple voltage drop model per 1000 ft for common sizes
+  // (These are placeholders—swap to your plant standards.)
+  // We'll do: Vdrop = I * R_per_1000ft * (ft/1000) * 2  (round trip)
+  // ---------------------------
+  const AC_CABLE = [
+    { id: "0.500", label: ".500", r_ohm_per_1000ft: 0.33 },
+    { id: "0.625", label: ".625", r_ohm_per_1000ft: 0.26 },
+    { id: "0.750", label: ".750", r_ohm_per_1000ft: 0.21 },
+    { id: "0.875", label: ".875", r_ohm_per_1000ft: 0.17 },
   ];
 
-  const TAP_VALUES = [4, 7, 8, 11, 14, 17, 20, 23, 26, 29];
-
-  // ---------- Wizard Steps ----------
-  const STEPS = [
-    "start",
-    "meterWhere",
-    "meterLevels",
-    "currentTap",
-    "segments",
-    "inlineTaps",
-    "devices",
-    "results"
-  ];
-
-  // ---------- State ----------
+  // ---------------------------
+  // App State
+  // ---------------------------
   const state = {
     tab: "calc", // calc | info | ac
-    step: "start",
     started: false,
 
-    meterWhere: null, // "atTap" | "upstream"
+    // Wizard step
+    step: 0, // 0..N
+
+    // Inputs
+    readingLocation: null, // "tap" | "upstream"
     meter250: "",
     meter1000: "",
 
-    tapValue: 4,
-    tapThruLoss: 1.5, // affects THRU path only
+    currentTapValue: "", // dB (tap value)
+    currentTapThru: "",  // dB (thru loss at current tap)
 
-    // segments: array of { cableId, feet }
-    segments: [
-      { cableId:"P3-500", feet: 0 }
-    ],
+    // Cable segments: list of { cableId, lengthFt }
+    segments: [],
 
-    // inline taps: array of { tapValue, thruLoss }
+    // Inline taps in the way: list of { tapValueDb, thruDb }
     inlineTaps: [],
 
-    // devices
-    internal: [], // array of device ids (internal)
-    field: [],    // array of device ids (field)
+    // Passives: list of { passiveId, where: "internal"|"field" }
+    passives: [],
 
-    // mini calc values
-    mini: Array(8).fill("")
+    // Mini adder (8 inputs)
+    adder: Array(8).fill(""),
   };
 
-  // ---------- Helpers ----------
-  const num = (v) => {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : 0;
-  };
+  // ---------------------------
+  // Mount
+  // ---------------------------
+  const root = document.getElementById("app");
+  if (!root) return;
 
-  const clamp = (v, minV, maxV) => Math.max(minV, Math.min(maxV, v));
+  // ---------------------------
+  // UI: Base Layout
+  // ---------------------------
+  function render() {
+    root.innerHTML = "";
 
-  const toast = (msg) => {
-    let t = $("#toast");
-    if (!t) {
-      t = document.createElement("div");
-      t.id = "toast";
-      t.className = "toast hidden";
-      document.body.appendChild(t);
-    }
-    t.textContent = msg;
-    t.classList.remove("hidden");
-    clearTimeout(toast._tm);
-    toast._tm = setTimeout(() => t.classList.add("hidden"), 2200);
-  };
-
-  const setStep = (step) => {
-    state.step = step;
-    render();
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const nextStep = () => {
-    const idx = STEPS.indexOf(state.step);
-    if (idx < STEPS.length - 1) setStep(STEPS[idx + 1]);
-  };
-
-  const prevStep = () => {
-    const idx = STEPS.indexOf(state.step);
-    if (idx > 0) setStep(STEPS[idx - 1]);
-  };
-
-  const cableById = (id) => CABLES.find(c => c.id === id) || CABLES[0];
-
-  const deviceLossSum = (ids, catalog) => {
-    return ids.reduce((sum, id) => {
-      const d = catalog.find(x => x.id === id);
-      return sum + (d ? d.loss : 0);
-    }, 0);
-  };
-
-  const segmentsLoss = () => {
-    // Returns {loss250, loss1000} total based on segments
-    let l250 = 0, l1000 = 0;
-    for (const s of state.segments) {
-      const feet = clamp(num(s.feet), 0, 200000);
-      const c = cableById(s.cableId);
-      l250 += (c.loss250 * (feet / 100));
-      l1000 += (c.loss1000 * (feet / 100));
-    }
-    return { loss250: l250, loss1000: l1000 };
-  };
-
-  const inlineThruLossSum = () => {
-    return state.inlineTaps.reduce((sum, t) => sum + num(t.thruLoss), 0);
-  };
-
-  const calcAll = () => {
-    const m250 = num(state.meter250);
-    const m1000 = num(state.meter1000);
-
-    const tapValue = num(state.tapValue);
-    const tapThruLoss = num(state.tapThruLoss);
-
-    const seg = segmentsLoss();
-    const inlineThru = inlineThruLossSum();
-    const internalLoss = deviceLossSum(state.internal, INTERNAL_DEVICES);
-    const fieldLoss = deviceLossSum(state.field, FIELD_DEVICES);
-
-    // If meter is taken AT TAP (tap port), upstream = meter + tapValue
-    // If meter is taken UPSTREAM, upstream = meter
-    const upstream250 = (state.meterWhere === "atTap") ? (m250 + tapValue) : m250;
-    const upstream1000 = (state.meterWhere === "atTap") ? (m1000 + tapValue) : m1000;
-
-    // Tap port output level at the current tap location:
-    // upstream - tapValue - inlineThru - devices - segments
-    // (This matches what you said: meter - cable - inline thru - tap value = expected)
-    const tapPortOut250 = upstream250 - tapValue - inlineThru - internalLoss - fieldLoss - seg.loss250;
-    const tapPortOut1000 = upstream1000 - tapValue - inlineThru - internalLoss - fieldLoss - seg.loss1000;
-
-    // THRU output (leaving tap on thru path) uses tapThruLoss instead of tapValue:
-    const thruOut250 = upstream250 - tapThruLoss - inlineThru - internalLoss - fieldLoss - seg.loss250;
-    const thruOut1000 = upstream1000 - tapThruLoss - inlineThru - internalLoss - fieldLoss - seg.loss1000;
-
-    return {
-      upstream250, upstream1000,
-      tapPortOut250, tapPortOut1000,
-      thruOut250, thruOut1000,
-      seg, inlineThru, internalLoss, fieldLoss
-    };
-  };
-
-  // ---------- UI Builders ----------
-  const appShell = (inner) => {
-    return `
-      <div class="container">
-        <div class="topbar">
-          <div class="brand">
-            <div class="title">CATV Calc</div>
-            <div class="sub">Dual-band (250 + 1000) • Wizard • Segments</div>
-          </div>
-          <div class="top-actions">
-            <button class="btn" id="btnResults">Results</button>
-            <button class="btn danger" id="btnReset">Reset</button>
-          </div>
-        </div>
-
-        <div class="tabs">
-          <div class="tab ${state.tab === "calc" ? "active" : ""}" data-tab="calc">CATV Calc</div>
-          <div class="tab ${state.tab === "info" ? "active" : ""}" data-tab="info">CATV Info</div>
-          <div class="tab ${state.tab === "ac" ? "active" : ""}" data-tab="ac">AC Power</div>
-        </div>
-
-        ${inner}
+    const shell = el("div", "shell");
+    const header = el(
+      "div",
+      "topbar",
+      `
+      <div class="brand">
+        <div class="title">CATV Calc</div>
+        <div class="subtitle">Wizard • Dual-band (250 + 1000)</div>
       </div>
-    `;
-  };
-
-  const navButtons = ({ back=true, next=true, nextLabel="Next" }={}) => `
-    <div class="nav">
-      ${back ? `<button class="btn" id="btnBack">Back</button>` : `<span></span>`}
-      ${next ? `<button class="btn primary" id="btnNext">${nextLabel}</button>` : `<span></span>`}
-    </div>
-  `;
-
-  // ---------- Tabs ----------
-  const renderInfoTab = () => {
-    return appShell(`
-      <div class="card">
-        <h2>CATV Info</h2>
-        <h1>Common sweep / response patterns</h1>
-        <p class="help">Quick reference. (You can add more pages later.)</p>
-
-        <div class="hr"></div>
-
-        <h2>Humping</h2>
-        <p class="help">
-          Signal build-up in the midband. Often caused by over-equalizing amplifiers in the cascade,
-          especially if EQ was used to correct roll-off.
-        </p>
-
-        <h2>Reflections</h2>
-        <p class="help">
-          Standing waves: stable symmetrical peaks/valleys. Usually impedance mismatch (not 75Ω).
-          Often shows in higher frequency region.
-        </p>
-
-        <div class="hr"></div>
-
-        <h2>High-End Roll-off</h2>
-        <p class="help">
-          Response drops near upper band edge. Causes: loose connectors/center seizure,
-          loose modules, amplifier misalignment, diplex/filter issues, bad splices,
-          passives designed for lower passband.
-        </p>
-
-        <h2>Notch</h2>
-        <p class="help">
-          Sharp dip. Often loose connectors, tap/coupler faceplates, amplifier modules,
-          internal RF grounding issues.
-        </p>
-
-        <div class="hr"></div>
-
-        <h2>Standing-wave distance (quick)</h2>
-        <p class="help">
-          D = 492 (Vp / F) &nbsp; where D in feet, Vp = velocity of propagation (% of c), F = frequency width (MHz).
-        </p>
+      <div class="topactions">
+        <button class="pill" id="btnResults">Results</button>
+        <button class="pill" id="btnReset">Reset</button>
       </div>
-    `);
-  };
+    `
+    );
 
-  const renderACTab = () => {
-    return appShell(`
-      <div class="card">
-        <h2>AC Power</h2>
-        <h1>Voltage Drop (simple)</h1>
-        <p class="help">
-          This is a basic calculator tab. We can refine with real cable resistance tables for .500/.625/.750/.875 later.
-        </p>
+    const tabs = el(
+      "div",
+      "tabs",
+      `
+      <button class="tab ${state.tab === "calc" ? "active" : ""}" data-tab="calc">CATV Calc</button>
+      <button class="tab ${state.tab === "info" ? "active" : ""}" data-tab="info">CATV Info</button>
+      <button class="tab ${state.tab === "ac" ? "active" : ""}" data-tab="ac">AC Power</button>
+    `
+    );
 
-        <div class="row">
-          <div class="field">
-            <label>Source Voltage (VAC)</label>
-            <input id="acV" placeholder="ex: 90" inputmode="decimal" />
-          </div>
-          <div class="field">
-            <label>Load Current (amps)</label>
-            <input id="acA" placeholder="ex: 6.0" inputmode="decimal" />
-          </div>
-          <div class="field">
-            <label>Loop Resistance (ohms)</label>
-            <input id="acR" placeholder="ex: 1.2" inputmode="decimal" />
-          </div>
-        </div>
+    const body = el("div", "body");
+    shell.append(header, tabs, body);
+    root.append(shell);
 
-        <div class="smallBtnRow">
-          <button class="btn primary" id="acCalc">Calculate</button>
-          <button class="btn" id="acClear">Clear</button>
-        </div>
-
-        <div class="hr"></div>
-
-        <div class="kv" id="acOut">
-          <div class="k">Voltage drop (V)</div><div class="v">—</div>
-          <div class="k">Load voltage (V)</div><div class="v">—</div>
-          <div class="k">Power loss (W)</div><div class="v">—</div>
-        </div>
-
-        <p class="note" style="margin-top:10px">
-          Formula used: Vdrop = I × R(loop). LoadV = SourceV - Vdrop. Ploss = I² × R(loop).
-        </p>
-      </div>
-    `);
-  };
-
-  // ---------- Wizard Screens ----------
-  const renderStart = () => {
-    const startedLabel = state.started ? "Ready ✓" : "Tap START (required on iPhone for audio)";
-    return `
-      <div class="card">
-        <h2>Start</h2>
-        <h1>Unlock the wizard</h1>
-        <p class="help">
-          Tap START once to enable audio + unlock the wizard (Safari/iPhone requires a user tap before sound).
-          Sound is optional — the wizard still works without it.
-        </p>
-
-        <div class="row" style="align-items:center">
-          <button class="btn primary" id="btnStart">START</button>
-          <div class="badge">${startedLabel}</div>
-        </div>
-
-        ${navButtons({ back:false, next:true, nextLabel:"Begin" })}
-      </div>
-    `;
-  };
-
-  const renderMeterWhere = () => `
-    <div class="card">
-      <h2>A) Meter Location</h2>
-      <h1>Where is your meter reading taken?</h1>
-      <p class="help">
-        <b>At Current Tap</b> = you measured at the tap port.<br/>
-        <b>Upstream</b> = you measured before losses (before segments + inline taps + devices).
-      </p>
-
-      <div class="choice-grid">
-        <div class="choice" id="pickAtTap">
-          <div class="big">AT CURRENT TAP</div>
-          <div class="small">measured at tap port</div>
-        </div>
-        <div class="choice" id="pickUpstream">
-          <div class="big">UPSTREAM</div>
-          <div class="small">measured before losses</div>
-        </div>
-      </div>
-
-      <div class="pill ${state.meterWhere === "atTap" ? "active" : ""}">Selected: ${state.meterWhere ? (state.meterWhere==="atTap" ? "AT TAP" : "UPSTREAM") : "NONE"}</div>
-
-      ${navButtons({ back:true, next:true })}
-    </div>
-  `;
-
-  const renderMeterLevels = () => `
-    <div class="card">
-      <h2>B) Meter Readings</h2>
-      <h1>Enter your levels</h1>
-      <p class="help">
-        Enter both readings. Meter pad is always <b>0</b>. App calculates both bands (250 + 1000).
-      </p>
-
-      <div class="row">
-        <div class="field">
-          <label>Meter @ 250 (dBmV)</label>
-          <input id="meter250" placeholder="ex: 34.5" value="${state.meter250}" inputmode="decimal" />
-        </div>
-        <div class="field">
-          <label>Meter @ 1000 (dBmV)</label>
-          <input id="meter1000" placeholder="ex: 41" value="${state.meter1000}" inputmode="decimal" />
-        </div>
-      </div>
-
-      ${navButtons({ back:true, next:true })}
-    </div>
-  `;
-
-  const renderCurrentTap = () => `
-    <div class="card">
-      <h2>C) Current Tap</h2>
-      <h1>Select tap values</h1>
-      <p class="help">
-        Tap value affects <b>tap port</b>. THRU loss affects <b>thru path</b>.
-      </p>
-
-      <div class="row">
-        <div class="field">
-          <label>Tap value (dB)</label>
-          <select id="tapValue">
-            ${TAP_VALUES.map(v => `<option value="${v}" ${Number(state.tapValue)===v?"selected":""}>${v}</option>`).join("")}
-          </select>
-        </div>
-        <div class="field">
-          <label>Tap THRU loss (dB)</label>
-          <input id="tapThru" placeholder="ex: 1.5" value="${state.tapThruLoss}" inputmode="decimal" />
-        </div>
-      </div>
-
-      ${navButtons({ back:true, next:true })}
-    </div>
-  `;
-
-  const renderSegments = () => {
-    const rows = state.segments.map((s, i) => `
-      <li>
-        <div class="row">
-          <div class="field">
-            <label>Cable</label>
-            <select data-segCable="${i}">
-              ${CABLES.map(c => `<option value="${c.id}" ${c.id===s.cableId?"selected":""}>${c.label}</option>`).join("")}
-            </select>
-          </div>
-          <div class="field">
-            <label>Feet</label>
-            <input data-segFeet="${i}" value="${s.feet}" placeholder="0" inputmode="decimal" />
-          </div>
-        </div>
-        <div class="smallBtnRow">
-          <button class="btn" data-segDup="${i}">Duplicate</button>
-          <button class="btn danger" data-segDel="${i}">Delete</button>
-        </div>
-      </li>
-    `).join("");
-
-    const miniSum = state.mini.reduce((sum, v) => sum + num(v), 0);
-
-    return `
-      <div class="card">
-        <h2>D) Cable Segments</h2>
-        <h1>Build your run (segments)</h1>
-        <p class="help">
-          Add segments if the run changes cable size/type. Loss is calculated for both 250 & 1000 automatically.
-        </p>
-
-        <ul class="list">${rows || ""}</ul>
-
-        <div class="smallBtnRow">
-          <button class="btn primary" id="addSeg">Add Segment</button>
-          <button class="btn" id="clearSeg">Clear Segments</button>
-        </div>
-
-        <div class="miniCalc">
-          <h3>Mini add calculator (up to 8 numbers)</h3>
-          <div class="miniGrid">
-            ${state.mini.map((v, idx) => `
-              <input data-mini="${idx}" value="${v}" placeholder="0" inputmode="decimal" />
-            `).join("")}
-          </div>
-          <div class="miniOut">
-            <div class="badge">SUM: ${miniSum.toFixed(2)}</div>
-            <div class="note">Use this for quick adds (example: 3+4+2+8+4+6+5+5)</div>
-          </div>
-        </div>
-
-        ${navButtons({ back:true, next:true })}
-      </div>
-    `;
-  };
-
-  const renderInlineTaps = () => {
-    const list = state.inlineTaps.map((t, i) => `
-      <li>
-        <div><b>${t.tapValue} dB tap</b> • THRU ${Number(t.thruLoss).toFixed(2)} dB</div>
-        <div class="smallBtnRow">
-          <button class="btn" data-itEdit="${i}">Edit</button>
-          <button class="btn danger" data-itDel="${i}">Delete</button>
-        </div>
-      </li>
-    `).join("");
-
-    return `
-      <div class="card">
-        <h2>E) Inline Taps</h2>
-        <h1>Add taps that are in the way (thru losses)</h1>
-        <p class="help">
-          These are taps in-line before your current tap. We subtract their <b>THRU loss</b> from both paths.
-        </p>
-
-        <div class="row">
-          <div class="field">
-            <label>Inline tap value (dB)</label>
-            <select id="itVal">
-              ${TAP_VALUES.map(v => `<option value="${v}">${v}</option>`).join("")}
-            </select>
-          </div>
-          <div class="field">
-            <label>Inline tap THRU loss (dB)</label>
-            <input id="itThru" value="1.5" inputmode="decimal" />
-          </div>
-        </div>
-
-        <div class="smallBtnRow">
-          <button class="btn primary" id="addInlineTap">Add Inline Tap</button>
-          <button class="btn" id="clearInlineTap">Clear Inline Taps</button>
-        </div>
-
-        <div class="hr"></div>
-
-        <div class="kv">
-          <div class="k">Inline THRU total (dB)</div><div class="v">${inlineThruLossSum().toFixed(2)}</div>
-        </div>
-
-        <ul class="list">${list || ""}</ul>
-
-        ${navButtons({ back:true, next:true })}
-      </div>
-    `;
-  };
-
-  const renderDevices = () => {
-    const internalTotal = deviceLossSum(state.internal, INTERNAL_DEVICES);
-    const fieldTotal = deviceLossSum(state.field, FIELD_DEVICES);
-
-    const internalList = state.internal.map((id, i) => {
-      const d = INTERNAL_DEVICES.find(x => x.id === id);
-      return `${i+1}) ${d ? d.label : id} (${d ? d.loss : "?"} dB)`;
-    }).join("<br/>") || "(none)";
-
-    const fieldList = state.field.map((id, i) => {
-      const d = FIELD_DEVICES.find(x => x.id === id);
-      return `${i+1}) ${d ? d.label : id} (${d ? d.loss : "?"} dB)`;
-    }).join("<br/>") || "(none)";
-
-    return `
-      <div class="card">
-        <h2>F) Devices</h2>
-        <h1>Add internal + field losses</h1>
-        <p class="help">
-          Internal = inside minibridger (internal 2-way, DC-8, DC-12). Field = passives out in the field (splitters, DCs).
-        </p>
-
-        <div class="row">
-          <div class="field">
-            <label>Internal device</label>
-            <select id="internalPick">
-              ${INTERNAL_DEVICES.map(d => `<option value="${d.id}">${d.label}</option>`).join("")}
-            </select>
-            <div class="smallBtnRow">
-              <button class="btn primary" id="addInternal">Add Internal</button>
-              <button class="btn" id="clearInternal">Clear Internal</button>
-            </div>
-            <div class="help" style="margin-top:8px"><b>Internal list:</b><br/>${internalList}</div>
-            <div class="badge">Internal total: ${internalTotal.toFixed(2)} dB</div>
-          </div>
-
-          <div class="field">
-            <label>Field device</label>
-            <select id="fieldPick">
-              ${FIELD_DEVICES.map(d => `<option value="${d.id}">${d.label}</option>`).join("")}
-            </select>
-            <div class="smallBtnRow">
-              <button class="btn primary" id="addField">Add Field</button>
-              <button class="btn" id="clearField">Clear Field</button>
-            </div>
-            <div class="help" style="margin-top:8px"><b>Field list:</b><br/>${fieldList}</div>
-            <div class="badge">Field total: ${fieldTotal.toFixed(2)} dB</div>
-          </div>
-        </div>
-
-        ${navButtons({ back:true, next:true, nextLabel:"See Results" })}
-      </div>
-    `;
-  };
-
-  const renderResults = () => {
-    const r = calcAll();
-    const seg = r.seg;
-
-    return `
-      <div class="card">
-        <h2>Results</h2>
-        <h1>Dual-band levels</h1>
-        <p class="help">
-          Calculated for both bands using your segments + inline taps + devices.
-          Tap port output includes <b>tap value</b>. Thru output includes <b>tap thru loss</b>.
-        </p>
-
-        <div class="kv">
-          <div class="k">Upstream @250</div><div class="v">${r.upstream250.toFixed(2)} dBmV</div>
-          <div class="k">Upstream @1000</div><div class="v">${r.upstream1000.toFixed(2)} dBmV</div>
-
-          <div class="k">Tap port output @250</div><div class="v">${r.tapPortOut250.toFixed(2)} dBmV</div>
-          <div class="k">Tap port output @1000</div><div class="v">${r.tapPortOut1000.toFixed(2)} dBmV</div>
-
-          <div class="k">Thru output @250</div><div class="v">${r.thruOut250.toFixed(2)} dBmV</div>
-          <div class="k">Thru output @1000</div><div class="v">${r.thruOut1000.toFixed(2)} dBmV</div>
-        </div>
-
-        <div class="hr"></div>
-
-        <div class="kv">
-          <div class="k">Segments loss @250</div><div class="v">${seg.loss250.toFixed(2)} dB</div>
-          <div class="k">Segments loss @1000</div><div class="v">${seg.loss1000.toFixed(2)} dB</div>
-
-          <div class="k">Inline taps THRU total</div><div class="v">${r.inlineThru.toFixed(2)} dB</div>
-          <div class="k">Internal devices total</div><div class="v">${r.internalLoss.toFixed(2)} dB</div>
-
-          <div class="k">Field devices total</div><div class="v">${r.fieldLoss.toFixed(2)} dB</div>
-          <div class="k">Meter mode</div><div class="v">${state.meterWhere === "atTap" ? "AT TAP" : "UPSTREAM"}</div>
-        </div>
-
-        <div class="hr"></div>
-
-        <p class="note">
-          Tap port output formula:
-          upstream − tap value − inline THRU − devices − segments.
-          <br/>
-          Thru output formula:
-          upstream − tap THRU − inline THRU − devices − segments.
-        </p>
-
-        ${navButtons({ back:true, next:false })}
-      </div>
-    `;
-  };
-
-  const renderCalcTab = () => {
-    let inner = "";
-    if (state.step === "start") inner = renderStart();
-    if (state.step === "meterWhere") inner = renderMeterWhere();
-    if (state.step === "meterLevels") inner = renderMeterLevels();
-    if (state.step === "currentTap") inner = renderCurrentTap();
-    if (state.step === "segments") inner = renderSegments();
-    if (state.step === "inlineTaps") inner = renderInlineTaps();
-    if (state.step === "devices") inner = renderDevices();
-    if (state.step === "results") inner = renderResults();
-
-    return appShell(inner);
-  };
-
-  // ---------- Render ----------
-  const render = () => {
-    if (state.tab === "info") {
-      $("#app").innerHTML = renderInfoTab();
-      wireCommon();
-      return;
-    }
-    if (state.tab === "ac") {
-      $("#app").innerHTML = renderACTab();
-      wireCommon();
-      wireAC();
-      return;
-    }
-
-    $("#app").innerHTML = renderCalcTab();
-    wireCommon();
-    wireWizard();
-  };
-
-  const wireCommon = () => {
-    // Tabs
-    document.querySelectorAll(".tab").forEach(t => {
-      t.addEventListener("click", () => {
-        state.tab = t.dataset.tab;
+    // Wire tabs
+    shell.querySelectorAll(".tab").forEach((b) => {
+      b.addEventListener("click", () => {
+        state.tab = b.getAttribute("data-tab");
         render();
       });
     });
 
-    // Reset / Results
+    // Header actions
     $("#btnReset")?.addEventListener("click", () => {
-      if (!confirm("Reset everything?")) return;
-      state.step = "start";
-      state.started = false;
-      state.meterWhere = null;
-      state.meter250 = "";
-      state.meter1000 = "";
-      state.tapValue = 4;
-      state.tapThruLoss = 1.5;
-      state.segments = [{ cableId:"P3-500", feet:0 }];
-      state.inlineTaps = [];
-      state.internal = [];
-      state.field = [];
-      state.mini = Array(8).fill("");
+      Object.assign(state, {
+        tab: state.tab,
+        started: false,
+        step: 0,
+        readingLocation: null,
+        meter250: "",
+        meter1000: "",
+        currentTapValue: "",
+        currentTapThru: "",
+        segments: [],
+        inlineTaps: [],
+        passives: [],
+        adder: Array(8).fill(""),
+      });
       render();
     });
 
@@ -679,208 +189,756 @@
       if (state.tab !== "calc") {
         state.tab = "calc";
       }
-      setStep("results");
-    });
-  };
-
-  const wireWizard = () => {
-    // Start
-    $("#btnStart")?.addEventListener("click", async () => {
-      state.started = true;
-      // optional tiny beep (no external file)
-      try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        o.type = "sine";
-        o.frequency.value = 880;
-        g.gain.value = 0.06;
-        o.connect(g); g.connect(ctx.destination);
-        o.start();
-        setTimeout(() => { o.stop(); ctx.close(); }, 90);
-      } catch {}
-      toast("Wizard unlocked");
+      state.step = 999; // results screen
       render();
     });
 
-    // Back/Next
-    $("#btnBack")?.addEventListener("click", () => prevStep());
-    $("#btnNext")?.addEventListener("click", () => {
-      // validation for some steps
-      if (state.step === "start") {
-        if (!state.started) toast("Tap START first (iPhone audio unlock).");
-        setStep("meterWhere");
-        return;
+    if (state.tab === "calc") renderCalc(body);
+    if (state.tab === "info") renderInfo(body);
+    if (state.tab === "ac") renderAC(body);
+
+    // iPhone audio unlock: just toggles started; you can hook sound later
+    // (We keep this because some iPhones block “first interaction” logic.)
+  }
+
+  // ---------------------------
+  // UI Building Blocks
+  // ---------------------------
+  function card(title, subtitle) {
+    const c = el("div", "card");
+    const h = el("div", "cardHead", `<div class="cardTitle">${title}</div>${subtitle ? `<div class="cardSub">${subtitle}</div>` : ""}`);
+    const content = el("div", "cardBody");
+    c.append(h, content);
+    return { c, content };
+  }
+
+  function bigChoice(label, hint, onClick, selected = false) {
+    const b = el(
+      "button",
+      `choice ${selected ? "selected" : ""}`,
+      `<div class="choiceTitle">${label}</div>${hint ? `<div class="choiceHint">${hint}</div>` : ""}`
+    );
+    b.addEventListener("click", onClick);
+    return b;
+  }
+
+  function numberField(label, value, onInput, placeholder = "0") {
+    const wrap = el("div", "field");
+    wrap.append(el("div", "fieldLabel", label));
+    const input = el("input", "input");
+    input.type = "number";
+    input.inputMode = "decimal";
+    input.placeholder = placeholder;
+    input.value = value ?? "";
+    input.addEventListener("input", (e) => onInput(e.target.value));
+    wrap.append(input);
+    return wrap;
+  }
+
+  function selectField(label, options, value, onChange) {
+    const wrap = el("div", "field");
+    wrap.append(el("div", "fieldLabel", label));
+    const sel = el("select", "select");
+    options.forEach((o) => {
+      const opt = el("option");
+      opt.value = o.value;
+      opt.textContent = o.label;
+      if (o.value === value) opt.selected = true;
+      sel.append(opt);
+    });
+    sel.addEventListener("change", (e) => onChange(e.target.value));
+    wrap.append(sel);
+    return wrap;
+  }
+
+  function stepNav(container, { back = null, next = null, nextLabel = "Next" } = {}) {
+    const row = el("div", "navrow");
+    const bBack = el("button", "btn ghost", "Back");
+    const bNext = el("button", "btn", nextLabel);
+
+    if (!back) bBack.disabled = true;
+    if (!next) bNext.disabled = true;
+
+    bBack.addEventListener("click", () => back && back());
+    bNext.addEventListener("click", () => next && next());
+
+    row.append(bBack, el("div", "spacer"), bNext);
+    container.append(row);
+  }
+
+  // ---------------------------
+  // Calculation engine (dual-band)
+  // ---------------------------
+  function calcAll() {
+    const m250 = safeNum(state.meter250);
+    const m1000 = safeNum(state.meter1000);
+
+    const tapValue = safeNum(state.currentTapValue);
+    const tapThru = safeNum(state.currentTapThru);
+
+    // Cable loss sums by segment, using each segment's selected cable type
+    let cableLoss250 = 0;
+    let cableLoss1000 = 0;
+    for (const seg of state.segments) {
+      const cable = CABLES.find((c) => c.id === seg.cableId) || CABLES[0];
+      const ft = safeNum(seg.lengthFt);
+      cableLoss250 += (cable.loss250 / 100) * ft;
+      cableLoss1000 += (cable.loss1000 / 100) * ft;
+    }
+
+    // Inline taps THRU loss sum
+    let inlineThruTotal = 0;
+    for (const t of state.inlineTaps) inlineThruTotal += safeNum(t.thruDb);
+
+    // Passives loss sum (separate internal vs field, but both affect path)
+    let internal250 = 0, internal1000 = 0, field250 = 0, field1000 = 0;
+    for (const p of state.passives) {
+      const def = PASSIVES.find((x) => x.id === p.passiveId);
+      if (!def) continue;
+      if (p.where === "internal") {
+        internal250 += def.loss250;
+        internal1000 += def.loss1000;
+      } else {
+        field250 += def.loss250;
+        field1000 += def.loss1000;
       }
-      if (state.step === "meterWhere") {
-        if (!state.meterWhere) return toast("Pick AT TAP or UPSTREAM.");
+    }
+
+    // ReadingLocation interpretation:
+    // - If "upstream": meter is before segments + inline taps + passives + current tap THRU (thru path)
+    // - If "tap": meter is at current tap OUT (port), so to compute upstream we add tap value back.
+    //
+    // We'll compute:
+    // A) Upstream level before the run (at the point feeding the run)
+    // B) Level at "tap in" (input of current tap) after run losses (thru path + cable + passives + inline taps)
+    // C) Tap port output at current tap (tap-in minus tap value)
+    // D) Thru output after current tap THRU loss (tap-in minus tapThru)
+    //
+    // NOTE: Inline THRU taps are part of the run losses, so they reduce tap-in.
+    // This matches what you said: meter - cable - inlineThru - current tap value => tap port output (if meter is upstream).
+    //
+    // Dual-band results:
+    // We'll do for both 250 and 1000.
+
+    function band(meter) {
+      // Meter pad is always 0, per your requirement.
+      if (state.readingLocation === "tap") {
+        // meter is at tap port output
+        const tapPort = meter;
+        const tapIn = tapPort + tapValue;
+        const thruOut = tapIn - tapThru;
+        const upstream = tapIn + cableLossForBand + inlineThruTotal + passivesForBand;
+        return { upstream, tapIn, tapPort, thruOut };
       }
-      if (state.step === "meterLevels") {
-        if (!state.meter250 || !state.meter1000) return toast("Enter both meter readings.");
-      }
-      nextStep();
+      // upstream mode: meter is before run losses
+      const upstream = meter;
+      const tapIn = upstream - cableLossForBand - inlineThruTotal - passivesForBand;
+      const tapPort = tapIn - tapValue;
+      const thruOut = tapIn - tapThru;
+      return { upstream, tapIn, tapPort, thruOut };
+    }
+
+    // We'll compute separately with band-specific loss variables:
+    const passives250 = internal250 + field250;
+    const passives1000 = internal1000 + field1000;
+
+    // Bind band helpers
+    let cableLossForBand = cableLoss250;
+    let passivesForBand = passives250;
+    const res250 = band(m250);
+
+    cableLossForBand = cableLoss1000;
+    passivesForBand = passives1000;
+    const res1000 = band(m1000);
+
+    return {
+      inputs: { m250, m1000, tapValue, tapThru },
+      losses: {
+        cableLoss250, cableLoss1000,
+        inlineThruTotal,
+        internal250, internal1000,
+        field250, field1000,
+        passives250, passives1000,
+      },
+      out: {
+        res250, res1000,
+      },
+    };
+  }
+
+  // ---------------------------
+  // CATV Calc Wizard
+  // ---------------------------
+  function renderCalc(body) {
+    // Tabs page: Wizard section
+    const start = card(
+      "START",
+      "Tap START once to unlock the wizard (and optional audio later)."
+    );
+    start.content.append(
+      el(
+        "div",
+        "row",
+        `
+        <button class="btn" id="btnStart">${state.started ? "Ready ✓" : "START"}</button>
+        <div class="pillnote">${state.started ? "Wizard unlocked" : "Required on some iPhones"}</div>
+      `
+      )
+    );
+    body.append(start.c);
+
+    start.c.querySelector("#btnStart").addEventListener("click", () => {
+      state.started = true;
+      // if you later add audio, you can prime AudioContext here.
+      render();
     });
 
-    // Step specific wiring
-    if (state.step === "meterWhere") {
-      $("#pickAtTap").addEventListener("click", () => { state.meterWhere="atTap"; render(); });
-      $("#pickUpstream").addEventListener("click", () => { state.meterWhere="upstream"; render(); });
+    if (!state.started) {
+      const tip = card("Tip", "If taps don’t work on iPhone, hit START once first.");
+      tip.content.append(el("div", "muted", "Then continue the questions below."));
+      body.append(tip.c);
+      return;
     }
 
-    if (state.step === "meterLevels") {
-      $("#meter250").addEventListener("input", (e) => state.meter250 = e.target.value);
-      $("#meter1000").addEventListener("input", (e) => state.meter1000 = e.target.value);
+    // If results screen
+    if (state.step === 999) {
+      renderResults(body);
+      return;
     }
 
-    if (state.step === "currentTap") {
-      $("#tapValue").addEventListener("change", (e) => state.tapValue = Number(e.target.value));
-      $("#tapThru").addEventListener("input", (e) => state.tapThruLoss = e.target.value);
-    }
-
-    if (state.step === "segments") {
-      // update seg inputs
-      document.querySelectorAll("[data-segCable]").forEach(sel => {
-        sel.addEventListener("change", (e) => {
-          const i = Number(sel.getAttribute("data-segCable"));
-          state.segments[i].cableId = e.target.value;
-        });
+    // Step 0: Reading location
+    if (state.step === 0) {
+      const s = card(
+        "A) Where is your meter reading taken?",
+        "AT CURRENT TAP = measured at the current tap port output. UPSTREAM = measured before the run."
+      );
+      const row = el("div", "choicesRow");
+      row.append(
+        bigChoice("AT CURRENT TAP", "measured at the tap port", () => {
+          state.readingLocation = "tap";
+          state.step++;
+          render();
+        }, state.readingLocation === "tap"),
+        bigChoice("UPSTREAM", "measured before losses", () => {
+          state.readingLocation = "upstream";
+          state.step++;
+          render();
+        }, state.readingLocation === "upstream")
+      );
+      s.content.append(row);
+      s.content.append(el("div", "selectedLine", `Selected: <b>${state.readingLocation ? state.readingLocation.toUpperCase() : "NONE"}</b>`));
+      stepNav(s.content, {
+        back: null,
+        next: state.readingLocation ? () => (state.step++, render()) : null,
       });
-      document.querySelectorAll("[data-segFeet]").forEach(inp => {
+      body.append(s.c);
+      return;
+    }
+
+    // Step 1: Meter readings
+    if (state.step === 1) {
+      const s = card(
+        "B) Meter readings (dBmV)",
+        "Enter both. No frequency chooser. Meter pad is always 0."
+      );
+      const grid = el("div", "grid2");
+      grid.append(
+        numberField("Meter @250 (dBmV)", state.meter250, (v) => (state.meter250 = v), "ex: 34.5"),
+        numberField("Meter @1000 (dBmV)", state.meter1000, (v) => (state.meter1000 = v), "ex: 41")
+      );
+      s.content.append(grid);
+      stepNav(s.content, {
+        back: () => (state.step--, render()),
+        next: () => (state.step++, render()),
+      });
+      body.append(s.c);
+      return;
+    }
+
+    // Step 2: Current tap
+    if (state.step === 2) {
+      const s = card(
+        "C) Current tap",
+        "Tap value affects TAP PORT output. THRU loss affects THRU path."
+      );
+      const grid = el("div", "grid2");
+      grid.append(
+        numberField("Current tap value (dB)", state.currentTapValue, (v) => (state.currentTapValue = v), "ex: 4"),
+        numberField("Current tap THRU loss (dB)", state.currentTapThru, (v) => (state.currentTapThru = v), "ex: 1.5")
+      );
+      s.content.append(grid);
+
+      s.content.append(el("div", "muted",
+        `Example (UPSTREAM mode): Tap Port = Upstream − cable − inline THRU − passives − tap value.`));
+
+      stepNav(s.content, {
+        back: () => (state.step--, render()),
+        next: () => (state.step++, render()),
+      });
+      body.append(s.c);
+      return;
+    }
+
+    // Step 3: Cable segments + mini adder
+    if (state.step === 3) {
+      const s = card(
+        "D) Cable segments",
+        "Add each run segment. Each segment has cable type + length. Mini adder is for quick sums (up to 8)."
+      );
+
+      // Mini adder (only on this screen, as requested)
+      const ad = el("div", "adder");
+      ad.append(el("div", "adderTitle", "Mini Adder (8 inputs)"));
+      const adGrid = el("div", "adderGrid");
+      state.adder.forEach((val, i) => {
+        const inp = el("input", "input");
+        inp.type = "number";
+        inp.placeholder = `${i + 1}`;
+        inp.value = val;
         inp.addEventListener("input", (e) => {
-          const i = Number(inp.getAttribute("data-segFeet"));
-          state.segments[i].feet = e.target.value;
+          state.adder[i] = e.target.value;
+          render(); // re-render to update sum
         });
+        adGrid.append(inp);
       });
+      const sum = state.adder.reduce((a, v) => a + safeNum(v), 0);
+      ad.append(adGrid);
+      ad.append(el("div", "adderSum", `Sum: <b>${fmt(sum, 2)}</b>`));
+      s.content.append(ad);
 
-      // duplicate / delete
-      document.querySelectorAll("[data-segDup]").forEach(btn => {
-        btn.addEventListener("click", () => {
-          const i = Number(btn.getAttribute("data-segDup"));
-          const copy = { ...state.segments[i] };
-          state.segments.splice(i+1, 0, copy);
-          render();
-        });
-      });
-      document.querySelectorAll("[data-segDel]").forEach(btn => {
-        btn.addEventListener("click", () => {
-          const i = Number(btn.getAttribute("data-segDel"));
-          state.segments.splice(i, 1);
-          if (state.segments.length === 0) state.segments.push({ cableId:"P3-500", feet:0 });
-          render();
-        });
-      });
+      // Add segment controls
+      const addRow = el("div", "segAdd");
+      const segCableOptions = CABLES.map((c) => ({ value: c.id, label: c.label }));
+      let tempCable = state.segments[state.segments.length - 1]?.cableId || CABLES[0].id;
+      let tempLen = "";
 
-      $("#addSeg").addEventListener("click", () => {
-        state.segments.push({ cableId:"P3-500", feet:0 });
-        render();
-      });
-      $("#clearSeg").addEventListener("click", () => {
-        state.segments = [{ cableId:"P3-500", feet:0 }];
+      const cableSel = selectField("Cable type", segCableOptions, tempCable, (v) => (tempCable = v));
+      const lenField = numberField("Length (ft)", tempLen, (v) => (tempLen = v), "ex: 200");
+      const btnAdd = el("button", "btn", "Add segment");
+
+      btnAdd.addEventListener("click", () => {
+        const lengthFt = safeNum(lenField.querySelector("input").value);
+        const cableId = cableSel.querySelector("select").value;
+        if (lengthFt <= 0) return;
+        state.segments.push({ cableId, lengthFt });
         render();
       });
 
-      // mini calc
-      document.querySelectorAll("[data-mini]").forEach(inp => {
-        inp.addEventListener("input", (e) => {
-          const i = Number(inp.getAttribute("data-mini"));
-          state.mini[i] = e.target.value;
-          // live update sum without full render? easiest: render (small app, ok)
-          render();
+      addRow.append(cableSel, lenField, btnAdd);
+      s.content.append(addRow);
+
+      // Segments list
+      const list = el("div", "list");
+      if (state.segments.length === 0) {
+        list.append(el("div", "muted", "No segments added yet."));
+      } else {
+        state.segments.forEach((seg, idx) => {
+          const c = CABLES.find((x) => x.id === seg.cableId) || CABLES[0];
+          const row = el("div", "listRow");
+          row.innerHTML = `<div><b>${idx + 1})</b> ${c.label} • ${fmt(seg.lengthFt, 0)} ft</div>`;
+          const del = el("button", "miniBtn", "Remove");
+          del.addEventListener("click", () => {
+            state.segments.splice(idx, 1);
+            render();
+          });
+          row.append(del);
+          list.append(row);
         });
+      }
+      const clear = el("button", "btn ghost", "Clear segments");
+      clear.addEventListener("click", () => {
+        state.segments = [];
+        render();
       });
+      s.content.append(list);
+      s.content.append(clear);
+
+      stepNav(s.content, {
+        back: () => (state.step--, render()),
+        next: () => (state.step++, render()),
+      });
+      body.append(s.c);
+      return;
     }
 
-    if (state.step === "inlineTaps") {
-      $("#addInlineTap").addEventListener("click", () => {
-        const v = Number($("#itVal").value);
-        const t = num($("#itThru").value || 0);
-        state.inlineTaps.push({ tapValue:v, thruLoss:t });
+    // Step 4: Inline taps (in the way)
+    if (state.step === 4) {
+      const s = card(
+        "E) Inline taps in the way",
+        "Add each inline tap. THRU loss is what matters for the main path."
+      );
+
+      const row = el("div", "grid2");
+      const tapValSel = selectField(
+        "Inline tap value (dB)",
+        [8, 11, 14, 17, 20, 23, 26, 29].map((v) => ({ value: String(v), label: `${v} dB` })),
+        "11",
+        () => {}
+      );
+      const thru = numberField("Inline tap THRU loss (dB)", String(DEFAULT_INLINE_THRU_DB), () => {}, "ex: 1.5");
+
+      const addBtn = el("button", "btn", "Add inline tap");
+      addBtn.addEventListener("click", () => {
+        const tv = safeNum(tapValSel.querySelector("select").value);
+        const th = safeNum(thru.querySelector("input").value);
+        state.inlineTaps.push({ tapValueDb: tv, thruDb: th });
         render();
       });
-      $("#clearInlineTap").addEventListener("click", () => {
+
+      row.append(tapValSel, thru);
+      s.content.append(row);
+      s.content.append(addBtn);
+
+      const list = el("div", "list");
+      if (state.inlineTaps.length === 0) {
+        list.append(el("div", "muted", "No inline taps added."));
+      } else {
+        state.inlineTaps.forEach((t, idx) => {
+          const r = el("div", "listRow");
+          r.innerHTML = `<div><b>${idx + 1})</b> ${fmt(t.tapValueDb, 0)} dB tap • THRU ${fmt(t.thruDb, 2)} dB</div>`;
+          const del = el("button", "miniBtn", "Remove");
+          del.addEventListener("click", () => {
+            state.inlineTaps.splice(idx, 1);
+            render();
+          });
+          r.append(del);
+          list.append(r);
+        });
+      }
+      const clear = el("button", "btn ghost", "Clear inline taps");
+      clear.addEventListener("click", () => {
         state.inlineTaps = [];
         render();
       });
 
-      document.querySelectorAll("[data-itDel]").forEach(btn => {
-        btn.addEventListener("click", () => {
-          const i = Number(btn.getAttribute("data-itDel"));
-          state.inlineTaps.splice(i, 1);
-          render();
-        });
-      });
+      // Inline THRU total quick view
+      const inlineTotal = state.inlineTaps.reduce((a, t) => a + safeNum(t.thruDb), 0);
+      s.content.append(el("div", "muted", `Inline taps THRU total: <b>${fmt(inlineTotal, 2)} dB</b>`));
 
-      document.querySelectorAll("[data-itEdit]").forEach(btn => {
-        btn.addEventListener("click", () => {
-          const i = Number(btn.getAttribute("data-itEdit"));
-          const cur = state.inlineTaps[i];
-          const newThru = prompt(`Edit THRU loss for ${cur.tapValue}dB tap`, String(cur.thruLoss));
-          if (newThru === null) return;
-          cur.thruLoss = num(newThru);
-          render();
-        });
+      s.content.append(list);
+      s.content.append(clear);
+
+      stepNav(s.content, {
+        back: () => (state.step--, render()),
+        next: () => (state.step++, render()),
+        nextLabel: "Next (Passives)",
       });
+      body.append(s.c);
+      return;
     }
 
-    if (state.step === "devices") {
-      $("#addInternal").addEventListener("click", () => {
-        const id = $("#internalPick").value;
-        if (id === "none") return;
-        state.internal.push(id);
-        render();
-      });
-      $("#clearInternal").addEventListener("click", () => {
-        state.internal = [];
+    // Step 5: Passives (internal + field)
+    if (state.step === 5) {
+      const s = card(
+        "F) Passives / devices",
+        "Add internal (minibridger) devices and field devices. Each has different loss @250/@1000."
+      );
+
+      const groupOptions = [];
+      const byGroup = PASSIVES.reduce((m, p) => {
+        (m[p.group] ||= []).push(p);
+        return m;
+      }, {});
+      Object.keys(byGroup).forEach((g) => groupOptions.push({ value: g, label: g }));
+
+      let tempGroup = groupOptions[0]?.value || "Splitters";
+      let tempPassive = byGroup[tempGroup]?.[0]?.id || PASSIVES[0]?.id || "";
+      let tempWhere = "field";
+
+      const groupSel = selectField("Category", groupOptions, tempGroup, (v) => {
+        tempGroup = v;
+        const first = byGroup[tempGroup]?.[0];
+        tempPassive = first ? first.id : tempPassive;
         render();
       });
 
-      $("#addField").addEventListener("click", () => {
-        const id = $("#fieldPick").value;
-        if (id === "none") return;
-        state.field.push(id);
+      const passiveOptions = (byGroup[tempGroup] || PASSIVES).map((p) => ({
+        value: p.id,
+        label: `${p.label} (250:${p.loss250} / 1000:${p.loss1000})`,
+      }));
+
+      const passiveSel = selectField("Device", passiveOptions, tempPassive, (v) => (tempPassive = v));
+      const whereSel = selectField(
+        "Where?",
+        [
+          { value: "internal", label: "Internal (minibridger)" },
+          { value: "field", label: "Field (line)" },
+        ],
+        tempWhere,
+        (v) => (tempWhere = v)
+      );
+
+      const addBtn = el("button", "btn", "Add device");
+      addBtn.addEventListener("click", () => {
+        const pid = passiveSel.querySelector("select").value;
+        const wh = whereSel.querySelector("select").value;
+        if (!pid) return;
+        state.passives.push({ passiveId: pid, where: wh });
         render();
       });
-      $("#clearField").addEventListener("click", () => {
-        state.field = [];
+
+      const grid = el("div", "grid2");
+      grid.append(groupSel, passiveSel);
+      s.content.append(grid);
+      s.content.append(whereSel);
+      s.content.append(addBtn);
+
+      const list = el("div", "list");
+      if (state.passives.length === 0) {
+        list.append(el("div", "muted", "No devices added."));
+      } else {
+        state.passives.forEach((p, idx) => {
+          const def = PASSIVES.find((x) => x.id === p.passiveId);
+          const r = el("div", "listRow");
+          r.innerHTML = `<div><b>${idx + 1})</b> ${def ? def.label : p.passiveId} • <span class="tag">${p.where}</span></div>`;
+          const del = el("button", "miniBtn", "Remove");
+          del.addEventListener("click", () => {
+            state.passives.splice(idx, 1);
+            render();
+          });
+          r.append(del);
+          list.append(r);
+        });
+      }
+
+      const clear = el("button", "btn ghost", "Clear devices");
+      clear.addEventListener("click", () => {
+        state.passives = [];
         render();
       });
+
+      s.content.append(list);
+      s.content.append(clear);
+
+      stepNav(s.content, {
+        back: () => (state.step--, render()),
+        next: () => (state.step = 999, render()),
+        nextLabel: "Show Results",
+      });
+      body.append(s.c);
+      return;
     }
-  };
 
-  const wireAC = () => {
-    $("#acCalc").addEventListener("click", () => {
-      const V = num($("#acV").value);
-      const I = num($("#acA").value);
-      const R = num($("#acR").value);
-      const vdrop = I * R;
-      const loadV = V - vdrop;
-      const ploss = (I * I) * R;
-      const out = $("#acOut");
-      out.innerHTML = `
-        <div class="k">Voltage drop (V)</div><div class="v">${vdrop.toFixed(2)}</div>
-        <div class="k">Load voltage (V)</div><div class="v">${loadV.toFixed(2)}</div>
-        <div class="k">Power loss (W)</div><div class="v">${ploss.toFixed(2)}</div>
-      `;
+    // Fallback
+    const s = card("Wizard", "Unknown step. Hit Results.");
+    body.append(s.c);
+  }
+
+  // ---------------------------
+  // Results Screen
+  // ---------------------------
+  function renderResults(body) {
+    const calc = calcAll();
+    const { losses, out } = calc;
+
+    const s = card("Results", "Dual-band outputs: 250 and 1000 shown together.");
+
+    // Summary table
+    const summary = el("div", "resultsGrid");
+
+    const box = (title, rows) => {
+      const b = el("div", "resultBox");
+      b.append(el("div", "resultTitle", title));
+      const ul = el("div", "resultRows");
+      rows.forEach((r) => {
+        ul.append(el("div", "resultRow", `<span>${r.k}</span><b>${r.v}</b>`));
+      });
+      b.append(ul);
+      return b;
+    };
+
+    summary.append(
+      box("Inputs", [
+        { k: "Reading location", v: (state.readingLocation || "—").toUpperCase() },
+        { k: "Meter @250", v: `${fmt(calc.inputs.m250)} dBmV` },
+        { k: "Meter @1000", v: `${fmt(calc.inputs.m1000)} dBmV` },
+        { k: "Tap value", v: `${fmt(calc.inputs.tapValue)} dB` },
+        { k: "Tap THRU", v: `${fmt(calc.inputs.tapThru)} dB` },
+      ]),
+      box("Loss breakdown (250)", [
+        { k: "Cable loss", v: `${fmt(losses.cableLoss250)} dB` },
+        { k: "Inline taps THRU", v: `${fmt(losses.inlineThruTotal)} dB` },
+        { k: "Internal passives", v: `${fmt(losses.internal250)} dB` },
+        { k: "Field passives", v: `${fmt(losses.field250)} dB` },
+        { k: "Total passives", v: `${fmt(losses.passives250)} dB` },
+      ]),
+      box("Loss breakdown (1000)", [
+        { k: "Cable loss", v: `${fmt(losses.cableLoss1000)} dB` },
+        { k: "Inline taps THRU", v: `${fmt(losses.inlineThruTotal)} dB` },
+        { k: "Internal passives", v: `${fmt(losses.internal1000)} dB` },
+        { k: "Field passives", v: `${fmt(losses.field1000)} dB` },
+        { k: "Total passives", v: `${fmt(losses.passives1000)} dB` },
+      ])
+    );
+
+    const outputs = el("div", "resultsGrid");
+    outputs.append(
+      box("250 MHz", [
+        { k: "Upstream", v: `${fmt(out.res250.upstream)} dBmV` },
+        { k: "Level at TAP IN", v: `${fmt(out.res250.tapIn)} dBmV` },
+        { k: "Tap PORT output", v: `${fmt(out.res250.tapPort)} dBmV` },
+        { k: "THRU output", v: `${fmt(out.res250.thruOut)} dBmV` },
+      ]),
+      box("1000 MHz", [
+        { k: "Upstream", v: `${fmt(out.res1000.upstream)} dBmV` },
+        { k: "Level at TAP IN", v: `${fmt(out.res1000.tapIn)} dBmV` },
+        { k: "Tap PORT output", v: `${fmt(out.res1000.tapPort)} dBmV` },
+        { k: "THRU output", v: `${fmt(out.res1000.thruOut)} dBmV` },
+      ])
+    );
+
+    // Quick sanity line for what you wanted:
+    // "meter - cable - inlineThru - tapValue"
+    const sanity = el("div", "sanity");
+    const m1000 = calc.inputs.m1000;
+    const san = m1000 - losses.cableLoss1000 - losses.inlineThruTotal - losses.passives1000 - calc.inputs.tapValue;
+    sanity.innerHTML = `<div class="muted">
+      Sanity (UPSTREAM @1000): meter − cable − inlineTHRU − passives − tapValue = <b>${fmt(san)} dBmV</b>
+    </div>`;
+    s.content.append(summary);
+    s.content.append(outputs);
+    s.content.append(sanity);
+
+    // Nav
+    stepNav(s.content, {
+      back: () => (state.step = 5, render()),
+      next: () => {},
+      nextLabel: "Done",
     });
 
-    $("#acClear").addEventListener("click", () => {
-      $("#acV").value = "";
-      $("#acA").value = "";
-      $("#acR").value = "";
-      $("#acOut").innerHTML = `
-        <div class="k">Voltage drop (V)</div><div class="v">—</div>
-        <div class="k">Load voltage (V)</div><div class="v">—</div>
-        <div class="k">Power loss (W)</div><div class="v">—</div>
+    body.append(s.c);
+  }
+
+  // ---------------------------
+  // CATV Info Tab
+  // ---------------------------
+  function renderInfo(body) {
+    const a = card("CATV Info", "Quick field reference.");
+
+    a.content.append(
+      el("div", "infoBlock", `
+        <div class="infoTitle">Humping</div>
+        <div class="infoText">A signal build-up of the midband. Common cause: over-equalizing amplifiers in an affected cascade, especially if EQ was used to correct roll-off.</div>
+      `)
+    );
+
+    a.content.append(
+      el("div", "infoBlock", `
+        <div class="infoTitle">Reflections (Standing waves)</div>
+        <div class="infoText">Stable symmetrical peaks/valleys in response across the band (often worse at higher frequencies). Cause: impedance mismatch somewhere in the path (anything not ~75Ω). Common in amps with bi-directional test points.</div>
+      `)
+    );
+
+    a.content.append(
+      el("div", "infoBlock", `
+        <div class="infoTitle">High-End Roll-off</div>
+        <div class="infoText">Frequency response drops near the upper band edge. Causes: loose connectors/center seizure screws, loose modules, amplifier misalignment, diplex problems, damaged center conductor, passives/plug-ins designed for lower passband.</div>
+      `)
+    );
+
+    a.content.append(
+      el("div", "infoBlock", `
+        <div class="infoTitle">Notch</div>
+        <div class="infoText">A sharp (often deep) negative dip. Causes: loose connectors, tap/coupler faceplates, or amplifier modules; internal RF grounding issues.</div>
+      `)
+    );
+
+    const f = card("Standing-wave distance (forward sweep)", "Used to estimate distance to fault.");
+    f.content.append(
+      el("div", "formula", `
+        <div><b>D = 492 × (Vp / F)</b></div>
+        <div class="muted">D = distance (feet). Use 149 instead of 492 for meters.</div>
+        <div class="muted">Vp = velocity of propagation (% of speed of light, ex: 87).</div>
+        <div class="muted">F = frequency width (MHz) of one standing-wave cycle.</div>
+      `)
+    );
+
+    // Calculator for D
+    const grid = el("div", "grid2");
+    let vp = "87";
+    let fw = "10";
+    const outBox = el("div", "resultBox");
+    const update = () => {
+      const D = 492 * (safeNum(vp) / Math.max(0.01, safeNum(fw)));
+      outBox.innerHTML = `<div class="resultTitle">Distance estimate</div>
+        <div class="resultRows">
+          <div class="resultRow"><span>D (feet)</span><b>${fmt(D, 1)}</b></div>
+        </div>`;
+    };
+    const vpField = numberField("Vp (%)", vp, (v) => { vp = v; update(); }, "ex: 87");
+    const fField = numberField("F (MHz)", fw, (v) => { fw = v; update(); }, "ex: 10");
+    grid.append(vpField, fField);
+    f.content.append(grid);
+    update();
+    f.content.append(outBox);
+
+    body.append(a.c);
+    body.append(f.c);
+  }
+
+  // ---------------------------
+  // AC Power Tab
+  // ---------------------------
+  function renderAC(body) {
+    const c = card("AC Powering Calc", "Simple voltage drop + end-of-line estimate (placeholders—swap to your plant values).");
+
+    let vStart = "90";
+    let amps = "6";
+    let ft = "1000";
+    let cableId = AC_CABLE[0].id;
+
+    const grid = el("div", "grid2");
+    grid.append(
+      numberField("Start voltage (VAC)", vStart, (v) => { vStart = v; update(); }, "ex: 90"),
+      numberField("Load current (A)", amps, (v) => { amps = v; update(); }, "ex: 6")
+    );
+    grid.append(
+      numberField("Distance (ft)", ft, (v) => { ft = v; update(); }, "ex: 2500"),
+      selectField("Cable size", AC_CABLE.map(x => ({ value: x.id, label: x.label })), cableId, (v) => { cableId = v; update(); })
+    );
+
+    const outBox = el("div", "resultBox");
+    const update = () => {
+      const V = safeNum(vStart);
+      const I = safeNum(amps);
+      const L = safeNum(ft);
+      const cab = AC_CABLE.find(x => x.id === cableId) || AC_CABLE[0];
+
+      // round trip resistance
+      const R = cab.r_ohm_per_1000ft * (L / 1000) * 2;
+      const vDrop = I * R;
+      const vEnd = V - vDrop;
+
+      // Simple thresholds
+      const ok63 = vEnd >= 63;
+      const ok70 = vEnd >= 70;
+      const ok75 = vEnd >= 75;
+
+      outBox.innerHTML = `
+        <div class="resultTitle">AC Results</div>
+        <div class="resultRows">
+          <div class="resultRow"><span>Round-trip R</span><b>${fmt(R, 3)} Ω</b></div>
+          <div class="resultRow"><span>Voltage drop</span><b>${fmt(vDrop, 2)} VAC</b></div>
+          <div class="resultRow"><span>End voltage</span><b>${fmt(vEnd, 2)} VAC</b></div>
+          <div class="resultRow"><span>≥ 63 VAC</span><b class="${ok63 ? "good" : "bad"}">${ok63 ? "PASS" : "FAIL"}</b></div>
+          <div class="resultRow"><span>≥ 70 VAC</span><b class="${ok70 ? "good" : "bad"}">${ok70 ? "PASS" : "FAIL"}</b></div>
+          <div class="resultRow"><span>≥ 75 VAC</span><b class="${ok75 ? "good" : "bad"}">${ok75 ? "PASS" : "FAIL"}</b></div>
+        </div>
+        <div class="muted" style="margin-top:10px;">
+          Note: resistance values are placeholders. Swap r_ohm_per_1000ft to match your plant spec.
+        </div>
       `;
-    });
-  };
+    };
 
-  // ---------- Boot ----------
-  const boot = () => {
-    const root = $("#app");
-    if (!root) return;
-    render();
-  };
+    c.content.append(grid);
+    c.content.append(outBox);
+    update();
+    body.append(c.c);
+  }
 
-  document.addEventListener("DOMContentLoaded", boot);
+  // ---------------------------
+  // Boot / Init
+  // ---------------------------
+  render();
+
 })();
