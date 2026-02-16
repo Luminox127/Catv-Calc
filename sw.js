@@ -1,4 +1,4 @@
-const CACHE = "catvcalc-v7"; // bump this if you ever want to force refresh
+const CACHE = "catvcalc-v8"; // bump this if you ever want to force refresh
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -45,3 +45,4 @@ self.addEventListener("fetch", (event) => {
     }
   })());
 });
+
