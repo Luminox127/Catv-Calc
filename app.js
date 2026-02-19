@@ -1,495 +1,520 @@
-(() => {
-  "use strict";
+// ============================================================
+// CATV CALC — 2026 UI Wizard (Dual-band auto-calc)
+// - No choosing 250/1000; results show both
+// - Tap-only picks for cable/devices/taps
+// - Mixed cable segments
+// - Inline tap THRU subtraction correct
+// ============================================================
 
-  const $ = (sel) => document.querySelector(sel);
+const boot = document.getElementById("boot");
+const bootBtn = document.getElementById("bootBtn");
+const bootDots = document.getElementById("bootDots");
 
-  // ---- Data: cable loss per 100 ft at 250 + 1000 (edit any time)
-  const CABLES = [
-    { id: "RG59", label: "RG59", loss250: 4.10, loss1000: 8.12 },
-    { id: "RG6", label: "RG6", loss250: 3.30, loss1000: 6.55 },
-    { id: "RG11", label: "RG11", loss250: 2.05, loss1000: 4.35 },
-    { id: "QR540", label: "QR540", loss250: 1.03, loss1000: 2.17 },
-    { id: "P3-500", label: "P3-500", loss250: 1.20, loss1000: 2.52 },
-    { id: "P3-625", label: "P3-625", loss250: 1.00, loss1000: 2.07 },
-    { id: "P3-750", label: "P3-750", loss250: 0.81, loss1000: 1.74 },
-    { id: "P3-875", label: "P3-875", loss250: 0.72, loss1000: 1.53 },
-  ];
+const qTitle = document.getElementById("qTitle");
+const qHint  = document.getElementById("qHint");
+const optionsEl = document.getElementById("options");
 
-  function num(v) {
-    const n = parseFloat(String(v ?? "").replace(/[^\d.-]/g, ""));
-    return Number.isFinite(n) ? n : 0;
-  }
-  function fmt(n) {
-    return Number.isFinite(n) ? n.toFixed(2) : "0.00";
-  }
-  function cableById(id) {
-    return CABLES.find(c => c.id === id) || CABLES[0];
-  }
+const numWrap = document.getElementById("numWrap");
+const numInput = document.getElementById("numInput");
+const numOk = document.getElementById("numOk");
+const numCancel = document.getElementById("numCancel");
 
-  // ---- App state (strings for inputs to avoid focus bugs)
-  const state = {
-    step: 0,
-    readingTaken: "",   // "tap" or "upstream"
-    meter250: "",
-    meter1000: "",
-    tapValue: "",
-    tapThru: "",
-    inlineThruEach: "",
-    inlineCount: 0,
-    segments: [{ cableId: "P3-500", feet: "" }],
+const backBtn = document.getElementById("backBtn");
+const resultsBtn = document.getElementById("resultsBtn");
+
+const resultsBtnTop = document.getElementById("resultsBtnTop");
+const resetBtnTop = document.getElementById("resetBtnTop");
+
+const resultsWrap = document.getElementById("resultsWrap");
+const resLow = document.getElementById("resLow");
+const resHigh = document.getElementById("resHigh");
+
+const STORAGE_KEY = "catv_calc_2026_v1";
+
+// ---------- Loss tables (dB per 100ft) ----------
+const LOSS_PER_100FT = {
+  "RG59":   {250: 4.10, 1000: 8.12},
+  "RG6":    {250: 3.30, 1000: 6.55},
+  "RG11":   {250: 2.05, 1000: 4.35},
+  "QR540":  {250: 1.03, 1000: 2.17},
+  "P3-500": {250: 1.20, 1000: 2.52},
+  "P3-625": {250: 1.00, 1000: 2.07},
+  "P3-750": {250: 0.81, 1000: 1.74},
+  "P3-875": {250: 0.72, 1000: 1.53}
+};
+
+const DEFAULT_TAP_THRU = {
+  4: 1.2, 8: 1.4, 11: 1.5, 14: 1.6, 17: 1.7, 20: 1.8, 23: 1.9, 26: 2.0, 29: 2.1
+};
+
+const CABLE_CHOICES = [
+  {id:"P3-500", label:"P3-500 (.500)", sub:"Hardline"},
+  {id:"P3-625", label:"P3-625 (.625)", sub:"Hardline"},
+  {id:"P3-750", label:"P3-750 (.750)", sub:"Hardline"},
+  {id:"P3-875", label:"P3-875 (.875)", sub:"Hardline"},
+  {id:"QR540", label:"QR540", sub:"Hardline"},
+  {id:"RG6", label:"RG6", sub:"Drop"},
+  {id:"RG11", label:"RG11", sub:"Drop"},
+  {id:"RG59", label:"RG59", sub:"Drop"}
+];
+
+const INTERNAL_DEVICES = [
+  {name:"2-way splitter", loss:3.5},
+  {name:"DC-8", loss:8.0},
+  {name:"DC-12", loss:12.0}
+];
+
+const FIELD_DEVICES = [
+  {name:"2-way splitter", loss:3.5},
+  {name:"2-way balanced", loss:3.5},
+  {name:"3-way splitter (636)", loss:5.5},
+  {name:"DC-9", loss:9.0},
+  {name:"DC-12", loss:12.0}
+];
+
+const TAP_VALUES = [4,8,11,14,17,20,23,26,29];
+
+// ---------- Utils ----------
+function f2(x){ return Number.isFinite(x) ? x.toFixed(2) : "0.00"; }
+function n(x, fallback=0){
+  const v = parseFloat(String(x).trim());
+  return Number.isFinite(v) ? v : fallback;
+}
+function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+function load(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return;
+  try{ state = {...state, ...JSON.parse(raw)}; }catch{}
+}
+
+function defaultState(){
+  return {
+    // meter inputs
+    meter250: 34.5,
+    meter1000: 41.0,
+    pad: 20.0,
+    padComp: false,
+
+    // where reading is taken
+    mode: "AT_TAP", // AT_TAP or UPSTREAM
+
+    // topology
+    segments: [],   // [{cable, ft}]
+    inlineTaps: [], // [{value, thru}]
+    internal: [],   // [{name, loss}]
+    field: [],      // [{name, loss}]
+
+    // current tap
+    currentTapValue: 4,
+    currentTapThru: 1.5
   };
-
-  // ---- Render (single-step wizard; inputs are not destroyed while typing)
-  const root = $("#app");
-
-  function buildTopBar() {
-    const top = document.createElement("div");
-    top.className = "topbar";
-
-    const brand = document.createElement("div");
-    brand.className = "brand";
-    brand.innerHTML = `
-      <div class="title">CATV Calc</div>
-      <div class="sub">Questionnaire • Dual-band (250 + 1000) • No meter pad</div>
-    `;
-
-    const actions = document.createElement("div");
-    actions.className = "actions";
-
-    const btnResults = document.createElement("button");
-    btnResults.className = "btn ghost";
-    btnResults.type = "button";
-    btnResults.textContent = "Results";
-    btnResults.addEventListener("click", () => {
-      state.step = STEPS.length - 1;
-      render();
-    });
-
-    const btnReset = document.createElement("button");
-    btnReset.className = "btn ghost";
-    btnReset.type = "button";
-    btnReset.textContent = "Reset";
-    btnReset.addEventListener("click", () => resetAll());
-
-    actions.appendChild(btnResults);
-    actions.appendChild(btnReset);
-
-    top.appendChild(brand);
-    top.appendChild(actions);
-    return top;
-  }
-
-  function card(title, hint) {
-    const c = document.createElement("div");
-    c.className = "card";
-
-    const head = document.createElement("div");
-    head.className = "stepHead";
-
-    const left = document.createElement("div");
-    left.innerHTML = `
-      <div class="stepTitle">${title}</div>
-      <div class="stepHint">${hint}</div>
-    `;
-
-    const right = document.createElement("div");
-    right.className = "pill";
-    right.textContent = `Step ${state.step + 1} / ${STEPS.length}`;
-
-    head.appendChild(left);
-    head.appendChild(right);
-    c.appendChild(head);
-
-    return c;
-  }
-
-  function nav(canNext) {
-    const bar = document.createElement("div");
-    bar.className = "navbar";
-
-    const back = document.createElement("button");
-    back.className = "btn";
-    back.type = "button";
-    back.textContent = "Back";
-    back.disabled = state.step === 0;
-    back.addEventListener("click", () => {
-      state.step = Math.max(0, state.step - 1);
-      render();
-    });
-
-    const next = document.createElement("button");
-    next.className = "btn primary";
-    next.type = "button";
-    next.textContent = state.step === STEPS.length - 1 ? "Done" : "Next";
-    next.disabled = !canNext;
-    next.addEventListener("click", () => {
-      if (state.step < STEPS.length - 1) {
-        state.step += 1;
-        render();
-      }
-    });
-
-    bar.appendChild(back);
-    bar.appendChild(next);
-    return bar;
-  }
-
-  // ---- Calculation (core)
-  function calc() {
-    const m250 = num(state.meter250);
-    const m1000 = num(state.meter1000);
-
-    const tapVal = num(state.tapValue);
-    const tapThru = num(state.tapThru);
-
-    const inlineThru = num(state.inlineThruEach) * (state.inlineCount || 0);
-
-    let cableLoss250 = 0, cableLoss1000 = 0;
-    for (const s of state.segments) {
-      const feet = num(s.feet);
-      const c = cableById(s.cableId);
-      cableLoss250 += (feet / 100) * c.loss250;
-      cableLoss1000 += (feet / 100) * c.loss1000;
-    }
-
-    // Tap Port from upstream (your formula)
-    const tapPort250_up = m250 - cableLoss250 - inlineThru - tapVal;
-    const tapPort1000_up = m1000 - cableLoss1000 - inlineThru - tapVal;
-
-    // Tap IN from upstream
-    const tapIn250_up = m250 - cableLoss250 - inlineThru;
-    const tapIn1000_up = m1000 - cableLoss1000 - inlineThru;
-
-    // THRU output from upstream (uses tap THRU, not tap value)
-    const thruOut250_up = m250 - cableLoss250 - inlineThru - tapThru;
-    const thruOut1000_up = m1000 - cableLoss1000 - inlineThru - tapThru;
-
-    // If measured at current tap PORT already
-    const tapPort250_tap = m250;
-    const tapPort1000_tap = m1000;
-    const tapIn250_tap = m250 + tapVal;
-    const tapIn1000_tap = m1000 + tapVal;
-    const thruOut250_tap = (m250 + tapVal) - tapThru;
-    const thruOut1000_tap = (m1000 + tapVal) - tapThru;
-
-    const mode = state.readingTaken;
-
-    const out = {
-      cableLoss250, cableLoss1000,
-      inlineThru,
-      tapVal, tapThru,
-      meter250: m250, meter1000: m1000,
-      tapIn250: mode === "upstream" ? tapIn250_up : tapIn250_tap,
-      tapIn1000: mode === "upstream" ? tapIn1000_up : tapIn1000_tap,
-      tapPort250: mode === "upstream" ? tapPort250_up : tapPort250_tap,
-      tapPort1000: mode === "upstream" ? tapPort1000_up : tapPort1000_tap,
-      thruOut250: mode === "upstream" ? thruOut250_up : thruOut250_tap,
-      thruOut1000: mode === "upstream" ? thruOut1000_up : thruOut1000_tap,
-    };
-
-    return out;
-  }
-
-  // ---- Steps
-  const STEPS = [
-    // 0
-    () => {
-      const c = card(
-        "A) Where is your meter reading taken?",
-        "Pick one. This changes how the app interprets your meter readings."
-      );
-
-      const grid = document.createElement("div");
-      grid.className = "choiceGrid";
-
-      const a = document.createElement("div");
-      a.className = "choice";
-      a.innerHTML = `<div class="big">AT CURRENT TAP</div><div class="muted">meter is at the tap port</div>`;
-      a.addEventListener("click", () => { state.readingTaken = "tap"; render(); });
-
-      const b = document.createElement("div");
-      b.className = "choice";
-      b.innerHTML = `<div class="big">UPSTREAM (BEFORE RUN)</div><div class="muted">meter is before losses</div>`;
-      b.addEventListener("click", () => { state.readingTaken = "upstream"; render(); });
-
-      a.classList.toggle("selected", state.readingTaken === "tap");
-      b.classList.toggle("selected", state.readingTaken === "upstream");
-
-      grid.appendChild(a);
-      grid.appendChild(b);
-      c.appendChild(grid);
-
-      c.appendChild(nav(state.readingTaken === "tap" || state.readingTaken === "upstream"));
-      return c;
-    },
-
-    // 1
-    () => {
-      const c = card(
-        "B) Enter meter readings (dBmV)",
-        "Dual-band only. Type both numbers."
-      );
-
-      const g = document.createElement("div");
-      g.className = "grid2";
-
-      const i250 = document.createElement("input");
-      i250.className = "in";
-      i250.inputMode = "decimal";
-      i250.placeholder = "Meter @250 (ex: 34.5)";
-      i250.value = state.meter250;
-      i250.addEventListener("input", () => { state.meter250 = i250.value; });
-
-      const i1000 = document.createElement("input");
-      i1000.className = "in";
-      i1000.inputMode = "decimal";
-      i1000.placeholder = "Meter @1000 (ex: 41)";
-      i1000.value = state.meter1000;
-      i1000.addEventListener("input", () => { state.meter1000 = i1000.value; });
-
-      g.appendChild(i250);
-      g.appendChild(i1000);
-      c.appendChild(g);
-
-      const ok = String(state.meter250).trim() !== "" && String(state.meter1000).trim() !== "";
-      c.appendChild(nav(ok));
-      return c;
-    },
-
-    // 2
-    () => {
-      const c = card(
-        "C) Current Tap settings",
-        "Tap value affects TAP PORT. Tap THRU loss affects THRU output."
-      );
-
-      const g = document.createElement("div");
-      g.className = "grid2";
-
-      const tval = document.createElement("input");
-      tval.className = "in";
-      tval.inputMode = "decimal";
-      tval.placeholder = "Tap value dB (ex: 4)";
-      tval.value = state.tapValue;
-      tval.addEventListener("input", () => { state.tapValue = tval.value; });
-
-      const tthru = document.createElement("input");
-      tthru.className = "in";
-      tthru.inputMode = "decimal";
-      tthru.placeholder = "Tap THRU loss dB (ex: 1.5)";
-      tthru.value = state.tapThru;
-      tthru.addEventListener("input", () => { state.tapThru = tthru.value; });
-
-      g.appendChild(tval);
-      g.appendChild(tthru);
-      c.appendChild(g);
-
-      const ok = String(state.tapValue).trim() !== "" && String(state.tapThru).trim() !== "";
-      c.appendChild(nav(ok));
-      return c;
-    },
-
-    // 3
-    () => {
-      const c = card(
-        "D) Inline taps (THRU losses between meter point and current tap)",
-        "Enter THRU loss each, then set how many inline taps."
-      );
-
-      const row = document.createElement("div");
-      row.className = "row";
-
-      const thruEach = document.createElement("input");
-      thruEach.className = "in";
-      thruEach.style.maxWidth = "320px";
-      thruEach.inputMode = "decimal";
-      thruEach.placeholder = "Inline tap THRU loss each (ex: 1.5)";
-      thruEach.value = state.inlineThruEach;
-      thruEach.addEventListener("input", () => { state.inlineThruEach = thruEach.value; });
-
-      const minus = document.createElement("button");
-      minus.className = "btn";
-      minus.type = "button";
-      minus.textContent = "−";
-      minus.addEventListener("click", () => { state.inlineCount = Math.max(0, state.inlineCount - 1); render(); });
-
-      const count = document.createElement("div");
-      count.className = "pill";
-      count.textContent = `Count: ${state.inlineCount}`;
-
-      const plus = document.createElement("button");
-      plus.className = "btn";
-      plus.type = "button";
-      plus.textContent = "+";
-      plus.addEventListener("click", () => { state.inlineCount = Math.min(50, state.inlineCount + 1); render(); });
-
-      row.appendChild(thruEach);
-      row.appendChild(minus);
-      row.appendChild(count);
-      row.appendChild(plus);
-      c.appendChild(row);
-
-      const total = num(state.inlineThruEach) * (state.inlineCount || 0);
-      const msg = document.createElement("div");
-      msg.className = "toast";
-      msg.textContent = `Inline THRU total: ${fmt(total)} dB`;
-      c.appendChild(msg);
-
-      const ok = String(state.inlineThruEach).trim() !== "";
-      c.appendChild(nav(ok));
-      return c;
-    },
-
-    // 4
-    () => {
-      const c = card(
-        "E) Cable segments",
-        "Add segments if cable type changes along the run."
-      );
-
-      const segWrap = document.createElement("div");
-
-      function renderSegRows() {
-        segWrap.innerHTML = "";
-
-        state.segments.forEach((seg, idx) => {
-          const row = document.createElement("div");
-          row.className = "segRow";
-
-          const n = document.createElement("div");
-          n.className = "pill";
-          n.textContent = `Seg ${idx + 1}`;
-
-          const sel = document.createElement("select");
-          sel.className = "sel";
-          CABLES.forEach(ca => {
-            const o = document.createElement("option");
-            o.value = ca.id;
-            o.textContent = ca.label;
-            sel.appendChild(o);
-          });
-          sel.value = seg.cableId;
-          sel.addEventListener("change", () => { seg.cableId = sel.value; updateTotals(); });
-
-          const ft = document.createElement("input");
-          ft.className = "in";
-          ft.inputMode = "decimal";
-          ft.placeholder = "feet (ex: 814)";
-          ft.value = seg.feet;
-          ft.addEventListener("input", () => { seg.feet = ft.value; updateTotals(); });
-
-          const rm = document.createElement("button");
-          rm.className = "btn danger";
-          rm.type = "button";
-          rm.textContent = "Remove";
-          rm.addEventListener("click", () => {
-            state.segments.splice(idx, 1);
-            if (state.segments.length === 0) state.segments.push({ cableId:"P3-500", feet:"" });
-            renderSegRows();
-            updateTotals();
-          });
-
-          row.appendChild(n);
-          row.appendChild(sel);
-          row.appendChild(ft);
-          row.appendChild(rm);
-          segWrap.appendChild(row);
-        });
-      }
-
-      const add = document.createElement("button");
-      add.className = "btn";
-      add.type = "button";
-      add.textContent = "Add Segment";
-      add.addEventListener("click", () => {
-        state.segments.push({ cableId: "P3-500", feet: "" });
-        renderSegRows();
-        updateTotals();
-      });
-
-      const totals = document.createElement("div");
-      totals.className = "toast";
-
-      function updateTotals() {
-        const r = calc();
-        totals.textContent = `Cable loss: 250=${fmt(r.cableLoss250)} dB • 1000=${fmt(r.cableLoss1000)} dB`;
-      }
-
-      renderSegRows();
-      updateTotals();
-
-      c.appendChild(segWrap);
-      c.appendChild(document.createElement("div")).className = "hr";
-      c.appendChild(add);
-      c.appendChild(totals);
-
-      // allow next even if feet blank (treat as 0)
-      c.appendChild(nav(true));
-      return c;
-    },
-
-    // 5 Results
-    () => {
-      const r = calc();
-      const c = card(
-        "RESULTS (250 + 1000)",
-        state.readingTaken === "upstream"
-          ? "Tap PORT = Meter − CableLoss − InlineTHRU − TapValue"
-          : "Meter is already at tap port output."
-      );
-
-      const kv = document.createElement("div");
-      kv.className = "kv";
-
-      function box(k, v, cls="") {
-        const b = document.createElement("div");
-        b.className = "box";
-        b.innerHTML = `<div class="k">${k}</div><div class="v ${cls}">${v}</div>`;
-        return b;
-      }
-
-      kv.appendChild(box("Tap IN @250", `${fmt(r.tapIn250)} dBmV`));
-      kv.appendChild(box("Tap IN @1000", `${fmt(r.tapIn1000)} dBmV`));
-      kv.appendChild(box("Tap PORT @250", `${fmt(r.tapPort250)} dBmV`, "good"));
-      kv.appendChild(box("Tap PORT @1000", `${fmt(r.tapPort1000)} dBmV`, "good"));
-      kv.appendChild(box("THRU OUT @250", `${fmt(r.thruOut250)} dBmV`));
-      kv.appendChild(box("THRU OUT @1000", `${fmt(r.thruOut1000)} dBmV`));
-
-      c.appendChild(kv);
-
-      const detail = document.createElement("div");
-      detail.className = "toast";
-      detail.innerHTML = `
-        Inline THRU total: <b>${fmt(r.inlineThru)}</b> dB<br/>
-        Cable loss: 250=<b>${fmt(r.cableLoss250)}</b> dB • 1000=<b>${fmt(r.cableLoss1000)}</b> dB<br/>
-        Tap value: <b>${fmt(r.tapVal)}</b> dB • Tap THRU: <b>${fmt(r.tapThru)}</b> dB
-      `;
-      c.appendChild(document.createElement("div")).className = "hr";
-      c.appendChild(detail);
-
-      c.appendChild(nav(true));
-      return c;
-    }
-  ];
-
-  function resetAll() {
-    state.step = 0;
-    state.readingTaken = "";
-    state.meter250 = "";
-    state.meter1000 = "";
-    state.tapValue = "";
-    state.tapThru = "";
-    state.inlineThruEach = "";
-    state.inlineCount = 0;
-    state.segments = [{ cableId: "P3-500", feet: "" }];
-    render();
-  }
-
-  function render() {
-    root.innerHTML = "";
-    root.appendChild(buildTopBar());
-    root.appendChild(STEPS[state.step]());
-  }
-
+}
+
+let state = defaultState();
+let screen = "MODE";
+let historyStack = [];
+let pendingNumber = null;
+const temp = {};
+
+function resetAll(){
+  localStorage.removeItem(STORAGE_KEY);
+  state = defaultState();
+  screen = "MODE";
+  historyStack = [];
+  resultsWrap.classList.add("hidden");
   render();
-})();
+}
+
+// ---------- UI helpers ----------
+function setScreen(next){
+  historyStack.push(screen);
+  screen = next;
+  resultsWrap.classList.add("hidden");
+  render();
+}
+function back(){
+  if (!historyStack.length) return;
+  screen = historyStack.pop();
+  resultsWrap.classList.add("hidden");
+  render();
+}
+
+function hideNumber(){
+  numWrap.classList.add("hidden");
+  pendingNumber = null;
+}
+function showNumber(title, hint, initial, onOk){
+  qTitle.textContent = title;
+  qHint.textContent = hint || "";
+  optionsEl.innerHTML = "";
+  numWrap.classList.remove("hidden");
+  numInput.value = (initial ?? "");
+  pendingNumber = onOk;
+  setTimeout(() => numInput.focus(), 50);
+}
+
+function optButton(label, sub, onPick){
+  const b = document.createElement("button");
+  b.className = "opt";
+  b.innerHTML = `<div class="optTitle">${label}</div>${sub ? `<div class="optSub">${sub}</div>`:""}`;
+  const handler = (e)=>{ e.preventDefault(); onPick(); };
+  b.addEventListener("touchend", handler, {passive:false});
+  b.addEventListener("click", handler);
+  return b;
+}
+
+function setOptions(title, hint, opts){
+  qTitle.textContent = title;
+  qHint.textContent = hint || "";
+  hideNumber();
+  optionsEl.innerHTML = "";
+  opts.forEach(o => optionsEl.appendChild(optButton(o.label, o.sub, o.onPick)));
+}
+
+// ---------- Calculations ----------
+function startLevel(freq){
+  const meter = (freq === 250) ? state.meter250 : state.meter1000;
+  return state.padComp ? meter : (meter - state.pad);
+}
+function cableLossForSegment(seg, freq){
+  const row = LOSS_PER_100FT[seg.cable];
+  if (!row) return 0;
+  return row[freq] * (seg.ft / 100);
+}
+function totalCableLoss(freq){
+  return state.segments.reduce((s, seg)=> s + cableLossForSegment(seg, freq), 0);
+}
+function totalInlineThruLoss(){
+  return state.inlineTaps.reduce((s, t)=> s + (t.thru || 0), 0);
+}
+function totalDeviceLoss(list){
+  return list.reduce((s, d)=> s + (d.loss || 0), 0);
+}
+
+function computeFor(freq){
+  const start = startLevel(freq);
+
+  const cab = totalCableLoss(freq);
+  const inlineThru = totalInlineThruLoss();
+  const internal = totalDeviceLoss(state.internal);
+  const field = totalDeviceLoss(state.field);
+
+  // level at current tap input
+  let levelAtTapIn = start;
+  if (state.mode === "UPSTREAM"){
+    levelAtTapIn = start - cab - inlineThru - internal - field;
+  }
+
+  const tapPort = levelAtTapIn - state.currentTapValue;
+  const thruLocal = levelAtTapIn - state.currentTapThru;
+
+  // final THRU after run (if reading is at tap, subtract downstream losses)
+  let finalThru = thruLocal;
+  if (state.mode === "AT_TAP"){
+    finalThru = thruLocal - cab - inlineThru - internal - field;
+  }
+
+  // inline tap port chain along THRU path (starting at current tap THRU output)
+  let running = thruLocal;
+  const inlineLines = [];
+  for (let i=0; i<state.inlineTaps.length; i++){
+    const t = state.inlineTaps[i];
+    const port = running - t.value;
+    running = running - t.thru;
+    inlineLines.push(`${i+1}) ${t.value}v  PORT ${f2(port)} | THRU_AFTER ${f2(running)} (THRU -${f2(t.thru)})`);
+  }
+
+  const segLines = state.segments.map((s,i)=>{
+    const l = cableLossForSegment(s, freq);
+    return `${i+1}) ${s.cable} ${s.ft}ft  -${f2(l)} dB`;
+  });
+
+  return {
+    freq, start, cab, inlineThru, internal, field,
+    levelAtTapIn, tapPort, thruLocal, finalThru,
+    segLines, inlineLines
+  };
+}
+
+function formatResult(r){
+  const status =
+    (r.finalThru >= -2 && r.finalThru <= 15) ? "OK" :
+    (r.finalThru < -2) ? "LOW" : "HOT";
+
+  return (
+`Start used:         ${f2(r.start)} dBmV
+Mode:               ${state.mode}
+Pad:                ${state.padComp ? "COMP" : `-${f2(state.pad)} dB`}
+
+Cable loss:         -${f2(r.cab)} dB
+Inline THRU total:  -${f2(r.inlineThru)} dB
+Internal total:     -${f2(r.internal)} dB
+Field total:        -${f2(r.field)} dB
+
+Level @ tap IN:     ${f2(r.levelAtTapIn)} dBmV
+Tap port OUT:       ${f2(r.tapPort)} dBmV  (tap -${f2(state.currentTapValue)})
+Thru OUT (local):   ${f2(r.thruLocal)} dBmV (thru -${f2(state.currentTapThru)})
+
+Inline ports (downstream):
+${r.inlineLines.length ? r.inlineLines.join("\n") : "(none)"}
+
+Final THRU level:   ${f2(r.finalThru)} dBmV
+Status:             ${status}
+
+Segments:
+${r.segLines.length ? r.segLines.join("\n") : "(none)"}`
+  );
+}
+
+function showResults(){
+  const low = computeFor(250);
+  const high = computeFor(1000);
+  resLow.textContent = formatResult(low);
+  resHigh.textContent = formatResult(high);
+  resultsWrap.classList.remove("hidden");
+}
+
+// ---------- Wizard flow ----------
+function render(){
+  switch(screen){
+
+    case "MODE":
+      setOptions(
+        "Where is your meter reading taken?",
+        "AT TAP = reading is at current tap. UPSTREAM = before the run.",
+        [
+          {label:"AT TAP (local reading)", sub:"Common: you’re standing at the tap", onPick: ()=>{ state.mode="AT_TAP"; save(); setScreen("M250"); }},
+          {label:"UPSTREAM (before run)", sub:"You measured before cable/devices", onPick: ()=>{ state.mode="UPSTREAM"; save(); setScreen("M250"); }}
+        ]
+      );
+      break;
+
+    case "M250":
+      showNumber("Meter @ 250 MHz (dBmV)", "Enter your LOW reading.", state.meter250, (v)=>{ state.meter250=v; save(); setScreen("M1000"); });
+      break;
+
+    case "M1000":
+      showNumber("Meter @ 1000 MHz (dBmV)", "Enter your HIGH reading.", state.meter1000, (v)=>{ state.meter1000=v; save(); setScreen("PAD"); });
+      break;
+
+    case "PAD":
+      showNumber("Meter pad (dB)", "Example: 20. If compensated, choose next.", state.pad, (v)=>{ state.pad=v; save(); setScreen("PADCOMP"); });
+      break;
+
+    case "PADCOMP":
+      setOptions(
+        "Does your meter compensate for the pad?",
+        "YES = do not subtract pad. NO = subtract pad.",
+        [
+          {label:"NO (subtract pad)", sub:"Start = meter - pad", onPick: ()=>{ state.padComp=false; save(); setScreen("SEG_MENU"); }},
+          {label:"YES (compensated)", sub:"Start = meter", onPick: ()=>{ state.padComp=true; save(); setScreen("SEG_MENU"); }}
+        ]
+      );
+      break;
+
+    case "SEG_MENU":
+      setOptions(
+        "Cable segments",
+        `Segments: ${state.segments.length}. Add in order (mixed cable OK).`,
+        [
+          {label:"Add segment", sub:"Pick cable + enter feet", onPick: ()=> setScreen("SEG_CABLE")},
+          {label:"Done", sub:"Go to inline taps", onPick: ()=> setScreen("INLINE_MENU")},
+          {label:"Clear segments", sub:"Remove all segments", onPick: ()=>{ state.segments=[]; save(); render(); }}
+        ]
+      );
+      break;
+
+    case "SEG_CABLE":
+      setOptions(
+        "Select cable type",
+        "Tap a cable for this segment.",
+        CABLE_CHOICES.map(c => ({
+          label: c.label,
+          sub: `${LOSS_PER_100FT[c.id][250]} dB/100ft @250 • ${LOSS_PER_100FT[c.id][1000]} dB/100ft @1000`,
+          onPick: ()=>{ temp.segCable=c.id; setScreen("SEG_FEET"); }
+        })).concat([{label:"Back", sub:"", onPick: ()=> back()}])
+      );
+      break;
+
+    case "SEG_FEET":
+      showNumber(`Segment length (ft)`, `Cable: ${temp.segCable}`, 100, (v)=>{
+        state.segments.push({ cable: temp.segCable, ft: Math.round(v) });
+        save(); setScreen("SEG_MENU");
+      });
+      break;
+
+    case "INLINE_MENU":
+      setOptions(
+        "Inline taps (THRU path)",
+        `Inline taps: ${state.inlineTaps.length}. THRU losses subtract on thru path.`,
+        [
+          {label:"Add inline tap", sub:"Pick value (auto THRU)", onPick: ()=> setScreen("INLINE_VALUE")},
+          {label:"Done", sub:"Go to internal devices", onPick: ()=> setScreen("INT_MENU")},
+          {label:"Clear inline taps", sub:"Remove all inline taps", onPick: ()=>{ state.inlineTaps=[]; save(); render(); }}
+        ]
+      );
+      break;
+
+    case "INLINE_VALUE":
+      setOptions(
+        "Select inline tap value",
+        "Tap a value; THRU uses default (editable later).",
+        TAP_VALUES.map(v => ({
+          label: `${v} value`,
+          sub: `Default THRU ${f2(DEFAULT_TAP_THRU[v] ?? 1.5)} dB`,
+          onPick: ()=>{ state.inlineTaps.push({ value:v, thru: DEFAULT_TAP_THRU[v] ?? 1.5 }); save(); setScreen("INLINE_MENU"); }
+        })).concat([{label:"Back", sub:"", onPick: ()=> back()}])
+      );
+      break;
+
+    case "INT_MENU":
+      setOptions(
+        "Internal devices (minibridger)",
+        `Internal items: ${state.internal.length}.`,
+        [
+          {label:"Add internal device", sub:"2-way / DC-8 / DC-12", onPick: ()=> setScreen("INT_ADD")},
+          {label:"Done", sub:"Go to field devices", onPick: ()=> setScreen("FIELD_MENU")},
+          {label:"Clear internal", sub:"Remove internal stack", onPick: ()=>{ state.internal=[]; save(); render(); }}
+        ]
+      );
+      break;
+
+    case "INT_ADD":
+      setOptions(
+        "Add internal device",
+        "Tap a device to add it.",
+        INTERNAL_DEVICES.map(d => ({
+          label: d.name,
+          sub: `-${f2(d.loss)} dB`,
+          onPick: ()=>{ state.internal.push({...d}); save(); setScreen("INT_MENU"); }
+        })).concat([{label:"Back", sub:"", onPick: ()=> back()}])
+      );
+      break;
+
+    case "FIELD_MENU":
+      setOptions(
+        "Field devices",
+        `Field items: ${state.field.length}.`,
+        [
+          {label:"Add field device", sub:"splitters / DC", onPick: ()=> setScreen("FIELD_ADD")},
+          {label:"Done", sub:"Choose current tap", onPick: ()=> setScreen("CUR_TAP_VALUE")},
+          {label:"Clear field", sub:"Remove field stack", onPick: ()=>{ state.field=[]; save(); render(); }}
+        ]
+      );
+      break;
+
+    case "FIELD_ADD":
+      setOptions(
+        "Add field device",
+        "Tap a device to add it.",
+        FIELD_DEVICES.map(d => ({
+          label: d.name,
+          sub: `-${f2(d.loss)} dB`,
+          onPick: ()=>{ state.field.push({...d}); save(); setScreen("FIELD_MENU"); }
+        })).concat([{label:"Back", sub:"", onPick: ()=> back()}])
+      );
+      break;
+
+    case "CUR_TAP_VALUE":
+      setOptions(
+        "Current tap value",
+        "Tap the value of the tap you’re on.",
+        TAP_VALUES.map(v => ({
+          label: `${v} value`,
+          sub: `Default THRU ${f2(DEFAULT_TAP_THRU[v] ?? state.currentTapThru)} dB`,
+          onPick: ()=>{ state.currentTapValue=v; state.currentTapThru = DEFAULT_TAP_THRU[v] ?? state.currentTapThru; save(); setScreen("CUR_TAP_THRU"); }
+        }))
+      );
+      break;
+
+    case "CUR_TAP_THRU":
+      showNumber("Current tap THRU loss (dB)", "Edit if needed.", state.currentTapThru, (v)=>{ state.currentTapThru=v; save(); setScreen("DONE"); });
+      break;
+
+    case "DONE":
+      setOptions(
+        "Ready",
+        "Tap Results to calculate both 250 and 1000 automatically.",
+        [
+          {label:"Show results", sub:"(250 + 1000)", onPick: ()=> showResults()},
+          {label:"Edit cable segments", sub:"", onPick: ()=> setScreen("SEG_MENU")},
+          {label:"Edit inline taps", sub:"", onPick: ()=> setScreen("INLINE_MENU")}
+        ]
+      );
+      break;
+
+    default:
+      screen="MODE";
+      render();
+  }
+}
+
+// ---------- Boot sound ----------
+function startupSound(){
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return;
+
+  const ctx = new AudioCtx();
+  const now = ctx.currentTime;
+
+  const out = ctx.createGain();
+  out.gain.setValueAtTime(0.0001, now);
+  out.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
+  out.gain.exponentialRampToValueAtTime(0.0001, now + 0.75);
+  out.connect(ctx.destination);
+
+  const o = ctx.createOscillator();
+  o.type = "sine";
+  o.frequency.setValueAtTime(520, now);
+  o.frequency.linearRampToValueAtTime(880, now + 0.12);
+  o.frequency.linearRampToValueAtTime(660, now + 0.24);
+  o.connect(out);
+  o.start(now);
+  o.stop(now + 0.30);
+
+  setTimeout(()=>{ try{ ctx.close(); }catch{} }, 1000);
+}
+
+function bootAnim(){
+  let i = 0;
+  const dots = ["•", "••", "•••"];
+  const t = setInterval(()=>{
+    bootDots.textContent = dots[i % dots.length];
+    i++;
+    if (i > 9) clearInterval(t);
+  }, 160);
+}
+
+// iPhone: touchend + click
+function startApp(e){
+  if (e) e.preventDefault();
+  startupSound();
+  boot.style.display = "none";
+  render();
+}
+["touchend","click"].forEach(evt => bootBtn.addEventListener(evt, startApp, {once:true, passive:false}));
+
+// numeric handlers
+numOk.addEventListener("click", (e)=>{
+  e.preventDefault();
+  const v = n(numInput.value, NaN);
+  if (!Number.isFinite(v)) { alert("Enter a number."); return; }
+  const cb = pendingNumber;
+  pendingNumber = null;
+  hideNumber();
+  cb(v);
+});
+numCancel.addEventListener("click", (e)=>{ e.preventDefault(); hideNumber(); render(); });
+
+backBtn.addEventListener("click", (e)=>{ e.preventDefault(); back(); });
+resultsBtn.addEventListener("click", (e)=>{ e.preventDefault(); showResults(); });
+resultsBtnTop.addEventListener("click", (e)=>{ e.preventDefault(); showResults(); });
+resetBtnTop.addEventListener("click", (e)=>{ e.preventDefault(); if (confirm("Reset everything?")) resetAll(); });
+
+load();
+bootAnim();
+
+// SW register
+if ("serviceWorker" in navigator){
+  window.addEventListener("load", ()=> navigator.serviceWorker.register("./sw.js").catch(()=>{}));
+}
