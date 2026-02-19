@@ -1,4 +1,4 @@
-const CACHE = "catvcalc-v1";
+const CACHE = "catvcalc-v2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -28,3 +28,4 @@ self.addEventListener("fetch", (e) => {
     caches.match(e.request).then((cached) => cached || fetch(e.request))
   );
 });
+
