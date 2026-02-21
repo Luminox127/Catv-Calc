@@ -2,21 +2,110 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#070a14" />
-  <title>CATV Calc</title>
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-  <div id="app"></div>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#070a12" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
-  <script src="app.js"></script>
-  <script>
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.getRegistrations().then(regs => {
-        regs.forEach(r => r.unregister());
-      });
-    }
-  </script>
+  <title>CATV Calc</title>
+
+  <!-- Cache-bust -->
+  <link rel="stylesheet" href="style.css?v=20260207b" />
+</head>
+
+<body>
+  <!-- Boot overlay -->
+  <div id="boot" class="boot">
+    <div class="bootCard">
+      <div class="bootBrand">FVG INDUSTRIES™</div>
+      <div class="bootLine">CATV CALC INITIALIZING…</div>
+      <div class="bootDots" id="bootDots">•••</div>
+
+      <button id="bootBtn" class="btn primary big" onclick="window.__STARTAPP && window.__STARTAPP(event)">Start</button>
+      <div class="bootHint">Tap Start (required for sound on iPhone).</div>
+    </div>
+  </div>
+
+  <header class="topbar">
+    <div class="topLeft">
+      <div class="appName">CATV Calc</div>
+      <div class="appSub" id="appSub">Wizard • Dual-band (250 + 1000)</div>
+    </div>
+    <div class="topRight">
+      <button id="showResultsTop" class="btn ghost">Results</button>
+      <button id="resetTop" class="btn ghost">Reset</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- Wizard card -->
+    <section class="card" id="card">
+      <div class="qHeader">
+        <div class="qTitle" id="qTitle">Question</div>
+        <div class="qHint" id="qHint"></div>
+      </div>
+
+      <div id="options" class="options"></div>
+
+      <div id="numWrap" class="numWrap hidden">
+        <div class="numRow">
+          <div class="prompt">Value</div>
+          <input id="numInput" class="numInput" inputmode="decimal" type="number" step="any" />
+        </div>
+        <div class="numBtns">
+          <button id="numOk" class="btn primary">OK</button>
+          <button id="numCancel" class="btn ghost">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Mini calc (only shown on Cable Segments screen) -->
+      <div id="miniCalc" class="miniCalc hidden">
+        <div class="miniTitle">Quick Calc</div>
+        <div class="miniRow">
+          <input id="mcA" class="miniInput" type="number" inputmode="decimal" placeholder="A" />
+          <select id="mcOp" class="miniSelect">
+            <option value="+">+</option>
+            <option value="-">−</option>
+            <option value="*">×</option>
+            <option value="/">÷</option>
+          </select>
+          <input id="mcB" class="miniInput" type="number" inputmode="decimal" placeholder="B" />
+          <button id="mcEq" class="btn primary miniBtn">=</button>
+          <div id="mcOut" class="miniOut">0</div>
+        </div>
+        <div class="miniActions">
+          <button id="mcCopy" class="btn ghost miniBtn">Copy</button>
+          <button id="mcClear" class="btn ghost miniBtn">Clear</button>
+        </div>
+      </div>
+
+      <div class="footer">
+        <button id="backBtn" class="btn ghost">Back</button>
+        <button id="showResults" class="btn primary">Results</button>
+      </div>
+    </section>
+
+    <!-- Results -->
+    <section id="resultsWrap" class="resultsWrap hidden">
+      <div class="resultsHeader">
+        <div class="resultsTitle">Results</div>
+        <div class="resultsSub">Calculated automatically for LOW (250 MHz) and HIGH (1000 MHz)</div>
+      </div>
+
+      <div class="grid2">
+        <div class="resultCard">
+          <div class="bandTag low">LOW • 250 MHz</div>
+          <pre id="resLow" class="mono"></pre>
+        </div>
+
+        <div class="resultCard">
+          <div class="bandTag high">HIGH • 1000 MHz</div>
+          <pre id="resHigh" class="mono"></pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js?v=20260207b"></script>
 </body>
 </html>
