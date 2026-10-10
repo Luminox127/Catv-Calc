@@ -13,21 +13,25 @@
   <title>CATV Calc</title>
 
   <!-- Cache-bust -->
-  <link rel="stylesheet" href="style.css?v=20261010a" />
+  <link rel="stylesheet" href="style.css?v=20261010tapout1" />
 </head>
 
 <body>
-  <!-- Boot overlay -->
-  <div id="boot" class="boot">
-    <div class="bootCard">
-      <div class="bootBrand">FVG INDUSTRIES™</div>
-      <div class="bootLine">CATV CALC INITIALIZING…</div>
-      <div class="bootDots" id="bootDots">•••</div>
-
-      <button id="bootBtn" class="btn primary big">Start</button>
-      <div class="bootHint">Tap Start (required for sound on iPhone).</div>
+  <section id="loginGate" class="loginGate" aria-label="FVG Industries login">
+    <div class="loginCard">
+      <div class="loginEyebrow">FVG INDUSTRIES™</div>
+      <h1>Welcome back</h1>
+      <p class="loginIntro">Enter your shared password to open CATV Calc.</p>
+      <form id="loginForm">
+        <label for="loginPassword">Password</label>
+        <input id="loginPassword" type="password" autocomplete="current-password" required aria-describedby="loginMessage">
+        <p id="loginMessage" class="loginMessage" role="alert"></p>
+        <button class="btn primary big" type="submit">Log in</button>
+      </form>
+      <div class="loginFooter">CATV Calc · Dual-band signal calculator</div>
     </div>
-  </div>
+  </section>
+  <div id="calculatorContent" hidden inert>
 
   <header class="topbar">
     <div class="topLeft">
@@ -35,6 +39,7 @@
       <div class="appSub" id="appSub">Wizard • Dual-band (250 + 1000)</div>
     </div>
     <div class="topRight">
+      <button id="logoutBtn" class="btn ghost" type="button">Log out</button>
       <button id="showResultsTop" class="btn ghost">Results</button>
       <button id="resetTop" class="btn ghost">Reset</button>
     </div>
@@ -44,7 +49,7 @@
     <!-- Wizard card -->
     <section class="card" id="card">
       <div class="qHeader">
-        <div class="qTitle" id="qTitle">Question</div>
+        <div class="qTitle" id="qTitle" tabindex="-1">Question</div>
         <div class="qHint" id="qHint"></div>
       </div>
 
@@ -101,18 +106,23 @@
       <div class="grid2">
         <div class="resultCard">
           <div class="bandTag low">LOW • 250 MHz</div>
+          <div class="tapPortHighlight" role="status"><div class="tapPortLabel">TAP PORT OUT</div><div id="tapPortLow" class="tapPortValue"></div></div>
           <pre id="resLow" class="mono"></pre>
         </div>
 
         <div class="resultCard">
           <div class="bandTag high">HIGH • 1000 MHz</div>
+          <div class="tapPortHighlight" role="status"><div class="tapPortLabel">TAP PORT OUT</div><div id="tapPortHigh" class="tapPortValue"></div></div>
           <pre id="resHigh" class="mono"></pre>
         </div>
       </div>
     </section>
   </main>
 
-  <script src="app.js?v=20261010a"></script>
+  </div>
+  <script src="atx-data.js?v=20261010tapout1"></script>
+  <script src="app.js?v=20261010tapout1"></script>
+  <script src="login.js?v=20261010tapout1"></script>
 </body>
 </html>
 

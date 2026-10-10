@@ -86,7 +86,7 @@ const FIELD_DEVICES = [
   {name:"DC-12", loss:12.0}
 ];
 
-function f2(x){ return Number.isFinite(x) ? x.toFixed(2) : "0.00"; }
+function f2(x){ return Number.isFinite(x) ? x.toFixed(2) : "N/A"; }
 function n(x, fallback=0){
   const text = String(x).trim();
   const v = text === "" ? NaN : Number(text);
@@ -100,12 +100,14 @@ function load(){
     if (!saved || typeof saved !== "object" || Array.isArray(saved)) return;
     const valid = (v) => typeof v === "number" && Number.isFinite(v);
     const loss = (v) => valid(v) && v >= 0;
-    if (["AT_TAP", "UPSTREAM"].includes(saved.mode)) state.mode = saved.mode;
+    state.mode = "UPSTREAM";
+    if (["typical","maximum"].includes(saved.tapBasis)) state.tapBasis = saved.tapBasis;
+    if (ATX_TAPS[saved.currentTapModel]) { state.currentTapModel = saved.currentTapModel; state.currentTapValue = ATX_TAPS[saved.currentTapModel].value; }
     for (const key of ["meter250", "meter1000"]) if (valid(saved[key])) state[key] = saved[key];
-    if (TAP_VALUES.includes(saved.currentTapValue)) state.currentTapValue = saved.currentTapValue;
+    if (state.currentTapModel === "legacy" && TAP_VALUES.includes(saved.currentTapValue)) state.currentTapValue = saved.currentTapValue;
     state.currentTapThru = loss(saved.currentTapThru) ? saved.currentTapThru : DEFAULT_TAP_THRU[state.currentTapValue];
     if (Array.isArray(saved.segments)) state.segments = saved.segments.filter(v => v && Object.hasOwn(LOSS_PER_100FT, v.cable) && loss(v.ft)).map(v => ({cable:v.cable, ft:v.ft}));
-    if (Array.isArray(saved.inlineTaps)) state.inlineTaps = saved.inlineTaps.filter(v => v && TAP_VALUES.includes(v.value) && loss(v.thru)).map(v => ({value:v.value, thru:v.thru}));
+    if (Array.isArray(saved.inlineTaps)) state.inlineTaps = saved.inlineTaps.filter(v => v && ((ATX_TAPS[v.model] && !ATX_TAPS[v.model].terminal) || (TAP_VALUES.includes(v.value) && loss(v.thru)))).map(v => ATX_TAPS[v.model] && !ATX_TAPS[v.model].terminal ? {model:v.model,value:ATX_TAPS[v.model].value} : {value:v.value,thru:v.thru});
     for (const key of ["internal", "field"]) if (Array.isArray(saved[key])) state[key] = saved[key].filter(v => v && typeof v.name === "string" && loss(v.loss)).map(v => ({name:v.name, loss:v.loss}));
   } catch {}
 }
@@ -122,7 +124,9 @@ function resetAll(){
 
 function defaultState(){
   return {
-    mode: "AT_TAP",     // AT_TAP or UPSTREAM
+    currentTapModel: "legacy",
+    tapBasis: "typical",
+    mode: "UPSTREAM",   // Meter reading at amplifier output, before run losses
     meter250: 34.5,
     meter1000: 41.0,
 
@@ -213,8 +217,42 @@ function cableLossForSegment(seg, freq){
 function totalCableLoss(freq){
   return state.segments.reduce((s, seg)=> s + cableLossForSegment(seg, freq), 0);
 }
-function totalInlineThruLoss(){
-  return state.inlineTaps.reduce((s, t)=> s + (t.thru || 0), 0);
+function atxLoss(model, kind, freq){
+  const spec = ATX_TAPS[model];
+  if (!spec) throw new Error("Unknown ATX tap model");
+  const index = state.tapBasis === "maximum" ? 1 : 0;
+  const points = Object.keys(spec[kind]).map(Number).sort((a,b)=>a-b);
+  const lo = points.filter(f=>f<=freq).at(-1), hi = points.find(f=>f>=freq);
+  if (lo === undefined || hi === undefined) return null;
+  const a=spec[kind][lo][index], b=spec[kind][hi][index];
+  if (a === null || b === null) return null;
+  return lo===hi ? a : a+(b-a)*(freq-lo)/(hi-lo);
+}
+function currentTapLoss(kind,freq){
+  return state.currentTapModel === "legacy" ? (kind === "tap" ? state.currentTapValue : state.currentTapThru) : atxLoss(state.currentTapModel,kind,freq);
+}
+function inlineLoss(t,freq){ return t.model ? atxLoss(t.model,"thru",freq) : t.thru; }
+function totalInlineThruLoss(freq){
+  return state.inlineTaps.reduce((sum,t)=>{
+    const loss=inlineLoss(t,freq);
+    if (loss === null) throw new Error("A terminating tap cannot be used in the inline path");
+    return sum+loss;
+  },0);
+}
+function pickTapFamily(isCurrent){
+  setOptions(isCurrent ? "Current tap type" : "Inline tap type", "Select the faceplate port count for ATX GigaXtend XS.",
+    [2,4,8,"legacy"].map(ports=>({label:ports === "legacy" ? "Generic / previous presets" : "ATX GigaXtend XS · "+ports+" ports",sub:ports === "legacy" ? "Existing nominal tap and fixed THRU losses" : "ANW2030 manufacturer loss tables",onPick:()=>{temp.tapFamily=ports;setScreen(isCurrent ? "CUR_TAP_VALUE" : "INLINE_VALUE");}})));
+}
+function tapChoices(isCurrent){
+  if (temp.tapFamily === "legacy" || !temp.tapFamily) return TAP_VALUES.map(v=>({label:v+" dB tap",sub:"Default THRU "+f2(DEFAULT_TAP_THRU[v])+" dB",onPick:()=>{
+    if(isCurrent){state.currentTapModel="legacy";state.currentTapValue=v;state.currentTapThru=DEFAULT_TAP_THRU[v];setScreen("CUR_TAP_THRU");}
+    else{state.inlineTaps.push({value:v,thru:DEFAULT_TAP_THRU[v]});setScreen("INLINE_MENU");}
+  }}));
+  return Object.entries(ATX_TAPS).filter(([key,t])=>t.ports===temp.tapFamily && (isCurrent || !t.terminal)).map(([key,t])=>({
+    label:t.value+" dB · "+t.part,
+    sub:t.terminal ? "Terminating tap — no THRU output" : "THRU "+f2(atxLoss(key,"thru",250))+" / "+f2(atxLoss(key,"thru",1000))+" dB (250 / 1000 MHz)",
+    onPick:()=>{if(isCurrent){state.currentTapModel=key;state.currentTapValue=t.value;setScreen("DONE");}else{state.inlineTaps.push({model:key,value:t.value});setScreen("INLINE_MENU");}}
+  }));
 }
 function totalDeviceLoss(list){
   return list.reduce((s, d)=> s + (d.loss || 0), 0);
@@ -224,29 +262,25 @@ function computeFor(freq){
   const start = startLevel(freq);
 
   const cab = totalCableLoss(freq);
-  const inlineThru = totalInlineThruLoss();
+  const inlineThru = totalInlineThruLoss(freq);
   const internal = totalDeviceLoss(state.internal);
   const field = totalDeviceLoss(state.field);
 
-  let levelAtTapIn = start;
-  if (state.mode === "UPSTREAM"){
-    levelAtTapIn = start - cab - inlineThru - internal - field;
-  }
+  const levelAtTapIn = start - cab - inlineThru - internal - field;
 
-  const tapPort = levelAtTapIn - state.currentTapValue;
-  const thruLocal = levelAtTapIn - state.currentTapThru;
+  const tapLoss = currentTapLoss("tap",freq);
+  const thruLoss = currentTapLoss("thru",freq);
+  const tapPort = levelAtTapIn - tapLoss;
+  const thruLocal = thruLoss === null ? null : levelAtTapIn - thruLoss;
 
-  let finalThru = thruLocal;
-  if (state.mode === "AT_TAP"){
-    finalThru = thruLocal - cab - inlineThru - internal - field;
-  }
+  const finalThru = thruLocal;
 
   // The wizard does not record cable/device positions between taps.
   // Report inline losses only; port levels require an ordered topology.
   const inlineLines = [];
   for (let i=0; i<state.inlineTaps.length; i++){
     const t = state.inlineTaps[i];
-    inlineLines.push(`${i+1}) ${t.value} dB tap: THRU loss -${f2(t.thru)} dB`);
+    inlineLines.push(`${i+1}) ${t.model ? ATX_TAPS[t.model].part : t.value+" dB generic tap"}: THRU loss -${f2(inlineLoss(t,freq))} dB`);
   }
 
   const segLines = state.segments.map((s,i)=>{
@@ -255,11 +289,12 @@ function computeFor(freq){
   });
 
   const status =
+    finalThru === null ? "N/A (no THRU output)" :
     (finalThru >= -2 && finalThru <= 15) ? "OK" :
     (finalThru < -2) ? "LOW" : "HOT";
 
   return {
-    freq, start, cab, inlineThru, internal, field,
+    freq, start, cab, inlineThru, internal, field, tapLoss, thruLoss,
     levelAtTapIn, tapPort, thruLocal, finalThru,
     inlineLines, segLines, status
   };
@@ -268,7 +303,9 @@ function computeFor(freq){
 function formatResult(r){
   return (
 `Start used:         ${f2(r.start)} dBmV   (pad fixed at 0dB)
-Mode:               ${state.mode}
+Reading location:   Meter reading out of amp
+Current tap:        ${state.currentTapModel === "legacy" ? "Generic / previous presets" : ATX_TAPS[state.currentTapModel].part}
+ATX loss basis:     ${state.tapBasis} (linear interpolation at 250 / 1000 MHz)
 
 Cable loss:         -${f2(r.cab)} dB
 Inline THRU total:  -${f2(r.inlineThru)} dB
@@ -276,13 +313,13 @@ Internal total:     -${f2(r.internal)} dB
 Field total:        -${f2(r.field)} dB
 
 Level @ tap IN:     ${f2(r.levelAtTapIn)} dBmV
-Tap port OUT:       ${f2(r.tapPort)} dBmV  (tap -${f2(state.currentTapValue)})
-Thru OUT (local):   ${f2(r.thruLocal)} dBmV (thru -${f2(state.currentTapThru)})
+TAP PORT OUT:       ${f2(r.tapPort)} dBmV  (tap -${f2(r.tapLoss)})
+Thru OUT (local):   ${r.thruLoss === null ? "N/A — terminating tap has no OUT port" : f2(r.thruLocal)+" dBmV (thru -"+f2(r.thruLoss)+" dB)"}
 
 Inline tap losses (port levels require component positions):
 ${r.inlineLines.length ? r.inlineLines.join("\n") : "(none)"}
 
-Final THRU level:   ${f2(r.finalThru)} dBmV
+Final THRU level:   ${r.finalThru === null ? "N/A — no OUT port" : f2(r.finalThru)+" dBmV"}
 Reference range:    ${r.status} (configured -2 to +15 dBmV; verify for this test point)
 
 Segments:
@@ -295,6 +332,8 @@ function showResultsNow(){
   const high = computeFor(1000);
   resLow.textContent = formatResult(low);
   resHigh.textContent = formatResult(high);
+  document.getElementById("tapPortLow").textContent = f2(low.tapPort) + " dBmV";
+  document.getElementById("tapPortHigh").textContent = f2(high.tapPort) + " dBmV";
   resultsWrap.classList.remove("hidden");
 }
 
@@ -309,10 +348,9 @@ function render(){
     case "MODE":
       setOptions(
         "Where is your meter reading taken?",
-        "AT TAP = measured at current tap INPUT, before tap loss. UPSTREAM = measured before all listed run losses.",
+        "Use the amplifier output reading, before the listed cable, tap and device losses.",
         [
-          {label:"AT TAP INPUT (local reading)", sub:"common in the field", onPick: ()=>{ state.mode="AT_TAP"; setScreen("M250"); }},
-          {label:"UPSTREAM (before run)", sub:"measured before losses", onPick: ()=>{ state.mode="UPSTREAM"; setScreen("M250"); }}
+          {label:"Meter reading out of amp", sub:"measured before run losses", onPick: ()=>{ state.mode="UPSTREAM"; setScreen("M250"); }}
         ]
       );
       break;
@@ -322,13 +360,19 @@ function render(){
       break;
 
     case "M1000":
-      showNumber("Meter @ 1000 MHz (dBmV)", "Enter HIGH reading.", state.meter1000, (v)=>{ state.meter1000=v; setScreen("SEG_MENU"); });
+      showNumber("Meter @ 1000 MHz (dBmV)", "Enter HIGH reading.", state.meter1000, (v)=>{ state.meter1000=v; setScreen("TAP_BASIS"); });
       break;
 
+    case "TAP_BASIS":
+      setOptions("ATX tap loss basis", "Typical predicts normal performance; maximum uses the published upper loss limits. Cable/device presets are unchanged.",
+        ["typical","maximum"].map(b=>({label:b === "typical" ? "Typical loss" : "Maximum loss",sub:"Applies to all selected ATX taps",onPick:()=>{state.tapBasis=b;setScreen("SEG_MENU");}})));
+      break;
+    case "INLINE_FAMILY": pickTapFamily(false); break;
+    case "CUR_TAP_FAMILY": pickTapFamily(true); break;
     case "SEG_MENU":
       setOptions(
         "Cable segments",
-        `Segments: ${state.segments.length}. AT TAP: downstream run. UPSTREAM: run before current tap.`,
+        `Segments: ${state.segments.length}. Cable run from amplifier output to current tap.`,
         [
           {label:"Add segment", sub:"pick cable + feet", onPick: ()=> setScreen("SEG_CABLE")},
           {label:"Done", sub:"go to inline taps", onPick: ()=> setScreen("INLINE_MENU")},
@@ -361,7 +405,7 @@ function render(){
         "Inline taps (THRU path)",
         `Inline taps: ${state.inlineTaps.length}. THRU losses subtract on the THRU path.`,
         [
-          {label:"Add inline tap", sub:"pick value (auto THRU)", onPick: ()=> setScreen("INLINE_VALUE")},
+          {label:"Add inline tap", sub:"pick model + value (auto THRU)", onPick: ()=> setScreen("INLINE_FAMILY")},
           {label:"Done", sub:"go to internal devices", onPick: ()=> setScreen("INT_MENU")},
           {label:"Clear inline taps", sub:"remove inline taps", onPick: ()=>{ state.inlineTaps=[]; render(); }}
         ]
@@ -369,15 +413,7 @@ function render(){
       break;
 
     case "INLINE_VALUE":
-      setOptions(
-        "Select inline tap value",
-        "Tap a value (THRU uses default).",
-        TAP_VALUES.map(v => ({
-          label: `${v} value`,
-          sub: `Default THRU ${f2(DEFAULT_TAP_THRU[v] ?? 1.5)} dB`,
-          onPick: ()=>{ state.inlineTaps.push({ value:v, thru: DEFAULT_TAP_THRU[v] ?? 1.5 }); setScreen("INLINE_MENU"); }
-        })).concat([{label:"Back", sub:"", onPick: ()=> back()}])
-      );
+      setOptions("Select inline tap", "Only taps with a THRU output are available.", tapChoices(false));
       break;
 
     case "INT_MENU":
@@ -410,7 +446,7 @@ function render(){
         `Field items: ${state.field.length}`,
         [
           {label:"Add field device", sub:"splitters / DC", onPick: ()=> setScreen("FIELD_ADD")},
-          {label:"Done", sub:"current tap", onPick: ()=> setScreen("CUR_TAP_VALUE")},
+          {label:"Done", sub:"current tap", onPick: ()=> setScreen("CUR_TAP_FAMILY")},
           {label:"Clear field", sub:"remove field stack", onPick: ()=>{ state.field=[]; render(); }}
         ]
       );
@@ -429,15 +465,7 @@ function render(){
       break;
 
     case "CUR_TAP_VALUE":
-      setOptions(
-        "Current tap value",
-        "Tap the value of the tap you are on.",
-        TAP_VALUES.map(v => ({
-          label: `${v} value`,
-          sub: `Default THRU ${f2(DEFAULT_TAP_THRU[v] ?? state.currentTapThru)} dB`,
-          onPick: ()=>{ state.currentTapValue=v; state.currentTapThru = DEFAULT_TAP_THRU[v] ?? state.currentTapThru; setScreen("CUR_TAP_THRU"); }
-        }))
-      );
+      setOptions("Select current tap", "Choose the nominal value printed on its faceplate.", tapChoices(true));
       break;
 
     case "CUR_TAP_THRU":
@@ -450,6 +478,8 @@ function render(){
         "Tap Results to calculate both LOW and HIGH automatically.",
         [
           {label:"Show results", sub:"250 + 1000", onPick: ()=> showResultsNow()},
+          {label:"Edit current tap", sub:"model + port count", onPick: ()=> setScreen("CUR_TAP_FAMILY")},
+          {label:"Edit loss basis", sub:"typical / maximum", onPick: ()=> setScreen("TAP_BASIS")},
           {label:"Edit cable segments", sub:"", onPick: ()=> setScreen("SEG_MENU")},
           {label:"Edit inline taps", sub:"", onPick: ()=> setScreen("INLINE_MENU")}
         ]
@@ -509,51 +539,12 @@ if (sumClear){
   });
 }
 
-// --------- Boot sound (simple modern chirp) ----------
-function startupSound(){
-  const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  if (!AudioCtx) return;
-
-  const ctx = new AudioCtx();
-  const now = ctx.currentTime;
-
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.0001, now);
-  g.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
-  g.gain.exponentialRampToValueAtTime(0.0001, now + 0.60);
-  g.connect(ctx.destination);
-
-  const o = ctx.createOscillator();
-  o.type = "sine";
-  o.frequency.setValueAtTime(520, now);
-  o.frequency.linearRampToValueAtTime(920, now + 0.10);
-  o.frequency.linearRampToValueAtTime(680, now + 0.22);
-  o.connect(g);
-  o.start(now);
-  o.stop(now + 0.26);
-
-  setTimeout(()=>{ try{ ctx.close(); }catch{} }, 900);
-}
-
-// Boot dots
-(function bootAnim(){
-  const dots = ["•", "••", "•••"];
-  let i = 0;
-  setInterval(()=>{ bootDots.textContent = dots[i++ % dots.length]; }, 180);
-})();
-
-// START function exposed for onclick fallback
-function startApp(e){
-  if (e) e.preventDefault();
-  try { startupSound(); } catch {}
-  boot.style.display = "none";
+// Open the calculator after successful login. Audio is handled by login.js.
+function startApp(){
   resultsWrap.classList.add("hidden");
   render();
 }
 window.__STARTAPP = startApp;
-
-// Listeners
-bootBtn.addEventListener("click", startApp);
 
 numOk.addEventListener("click", (e)=>{
   e.preventDefault();
@@ -573,8 +564,10 @@ showResults.addEventListener("click", (e)=>{ e.preventDefault(); showResultsNow(
 showResultsTop.addEventListener("click", (e)=>{ e.preventDefault(); showResultsNow(); });
 resetTop.addEventListener("click", (e)=>{ e.preventDefault(); if (confirm("Reset everything?")) resetAll(); });
 
-// Load saved state
-load();
+// Each page load starts a fresh calculation.
+// Keep in-session wizard navigation intact, but discard previous runs.
+try { localStorage.removeItem(STORAGE_KEY); } catch {}
+state = defaultState();
 
 // Ensure pad is always 0 even if old state existed
 state.pad = 0.0;
