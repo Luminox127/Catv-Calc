@@ -7,15 +7,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="CATV Calc">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
 
   <title>CATV Calc</title>
 
   <!-- Cache-bust -->
-  <link rel="stylesheet" href="style.css?v=20260207b" />
+  <link rel="stylesheet" href="style.css?v=20261010a" />
 </head>
 
 <body>
@@ -26,7 +24,7 @@
       <div class="bootLine">CATV CALC INITIALIZING…</div>
       <div class="bootDots" id="bootDots">•••</div>
 
-      <button id="bootBtn" class="btn primary big" onclick="window.__STARTAPP && window.__STARTAPP(event)">Start</button>
+      <button id="bootBtn" class="btn primary big">Start</button>
       <div class="bootHint">Tap Start (required for sound on iPhone).</div>
     </div>
   </div>
@@ -68,7 +66,7 @@
   <div class="miniTitle">Quick Calc (sum up to 8)</div>
 
   <div class="sumGrid">
-    <input id="s1" class="sumInput" type="number" inputmode="decimal" placeholder="1" />
+    <input id="s1" class="sumInput" type="number" step="any" inputmode="decimal" placeholder="1" />
     <input id="s2" class="sumInput" type="number" inputmode="decimal" placeholder="2" />
     <input id="s3" class="sumInput" type="number" inputmode="decimal" placeholder="3" />
     <input id="s4" class="sumInput" type="number" inputmode="decimal" placeholder="4" />
@@ -87,12 +85,6 @@
 
   <div class="sumHint">Tip: tap boxes, enter numbers — sum updates automatically.</div>
 </div>
-        <div class="miniActions">
-          <button id="mcCopy" class="btn ghost miniBtn">Copy</button>
-          <button id="mcClear" class="btn ghost miniBtn">Clear</button>
-        </div>
-      </div>
-
       <div class="footer">
         <button id="backBtn" class="btn ghost">Back</button>
         <button id="showResults" class="btn primary">Results</button>
@@ -103,7 +95,7 @@
     <section id="resultsWrap" class="resultsWrap hidden">
       <div class="resultsHeader">
         <div class="resultsTitle">Results</div>
-        <div class="resultsSub">Calculated automatically for LOW (250 MHz) and HIGH (1000 MHz)</div>
+        <div class="resultsSub">LOW (250 MHz) and HIGH (1000 MHz). Uses preset cable/device losses; verify against equipment specifications.</div>
       </div>
 
       <div class="grid2">
@@ -120,7 +112,7 @@
     </section>
   </main>
 
-  <script src="app.js?v=20260207b"></script>
+  <script src="app.js?v=20261010a"></script>
 </body>
 </html>
 

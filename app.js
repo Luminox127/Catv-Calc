@@ -88,22 +88,35 @@ const FIELD_DEVICES = [
 
 function f2(x){ return Number.isFinite(x) ? x.toFixed(2) : "0.00"; }
 function n(x, fallback=0){
-  const v = parseFloat(String(x).trim());
+  const text = String(x).trim();
+  const v = text === "" ? NaN : Number(text);
   return Number.isFinite(v) ? v : fallback;
 }
 
-function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+function save(){ try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {} }
 function load(){
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return;
-  try{ state = {...state, ...JSON.parse(raw)}; }catch{}
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return;
+    const valid = (v) => typeof v === "number" && Number.isFinite(v);
+    const loss = (v) => valid(v) && v >= 0;
+    if (["AT_TAP", "UPSTREAM"].includes(saved.mode)) state.mode = saved.mode;
+    for (const key of ["meter250", "meter1000"]) if (valid(saved[key])) state[key] = saved[key];
+    if (TAP_VALUES.includes(saved.currentTapValue)) state.currentTapValue = saved.currentTapValue;
+    state.currentTapThru = loss(saved.currentTapThru) ? saved.currentTapThru : DEFAULT_TAP_THRU[state.currentTapValue];
+    if (Array.isArray(saved.segments)) state.segments = saved.segments.filter(v => v && Object.hasOwn(LOSS_PER_100FT, v.cable) && loss(v.ft)).map(v => ({cable:v.cable, ft:v.ft}));
+    if (Array.isArray(saved.inlineTaps)) state.inlineTaps = saved.inlineTaps.filter(v => v && TAP_VALUES.includes(v.value) && loss(v.thru)).map(v => ({value:v.value, thru:v.thru}));
+    for (const key of ["internal", "field"]) if (Array.isArray(saved[key])) state[key] = saved[key].filter(v => v && typeof v.name === "string" && loss(v.loss)).map(v => ({name:v.name, loss:v.loss}));
+  } catch {}
 }
 function resetAll(){
-  localStorage.removeItem(STORAGE_KEY);
+  try { localStorage.removeItem(STORAGE_KEY); } catch {}
   state = defaultState();
   screen = "MODE";
   historyStack = [];
   resultsWrap.classList.add("hidden");
+  sumInputs.forEach(el => { if (el) el.value = ""; });
+  sumCompute();
   render();
 }
 
@@ -122,7 +135,7 @@ function defaultState(){
     field: [],
 
     currentTapValue: 4,
-    currentTapThru: 1.5
+    currentTapThru: DEFAULT_TAP_THRU[4]
   };
 }
 
@@ -151,7 +164,6 @@ function optButton(label, sub, onPick){
   b.className = "opt";
   b.innerHTML = `<div class="optTitle">${label}</div>${sub ? `<div class="optSub">${sub}</div>`:""}`;
   const handler = (e)=>{ e.preventDefault(); onPick(); };
-  b.addEventListener("touchend", handler, {passive:false});
   b.addEventListener("click", handler);
   return b;
 }
@@ -229,13 +241,12 @@ function computeFor(freq){
     finalThru = thruLocal - cab - inlineThru - internal - field;
   }
 
-  let running = thruLocal;
+  // The wizard does not record cable/device positions between taps.
+  // Report inline losses only; port levels require an ordered topology.
   const inlineLines = [];
   for (let i=0; i<state.inlineTaps.length; i++){
     const t = state.inlineTaps[i];
-    const port = running - t.value;
-    running = running - t.thru;
-    inlineLines.push(`${i+1}) ${t.value}v  PORT ${f2(port)} | THRU_AFTER ${f2(running)} (THRU -${f2(t.thru)})`);
+    inlineLines.push(`${i+1}) ${t.value} dB tap: THRU loss -${f2(t.thru)} dB`);
   }
 
   const segLines = state.segments.map((s,i)=>{
@@ -268,11 +279,11 @@ Level @ tap IN:     ${f2(r.levelAtTapIn)} dBmV
 Tap port OUT:       ${f2(r.tapPort)} dBmV  (tap -${f2(state.currentTapValue)})
 Thru OUT (local):   ${f2(r.thruLocal)} dBmV (thru -${f2(state.currentTapThru)})
 
-Inline ports:
+Inline tap losses (port levels require component positions):
 ${r.inlineLines.length ? r.inlineLines.join("\n") : "(none)"}
 
 Final THRU level:   ${f2(r.finalThru)} dBmV
-Status:             ${r.status}
+Reference range:    ${r.status} (configured -2 to +15 dBmV; verify for this test point)
 
 Segments:
 ${r.segLines.length ? r.segLines.join("\n") : "(none)"}`
@@ -298,9 +309,9 @@ function render(){
     case "MODE":
       setOptions(
         "Where is your meter reading taken?",
-        "AT TAP = measured at current tap. UPSTREAM = measured before the run.",
+        "AT TAP = measured at current tap INPUT, before tap loss. UPSTREAM = measured before all listed run losses.",
         [
-          {label:"AT TAP (local reading)", sub:"common in the field", onPick: ()=>{ state.mode="AT_TAP"; setScreen("M250"); }},
+          {label:"AT TAP INPUT (local reading)", sub:"common in the field", onPick: ()=>{ state.mode="AT_TAP"; setScreen("M250"); }},
           {label:"UPSTREAM (before run)", sub:"measured before losses", onPick: ()=>{ state.mode="UPSTREAM"; setScreen("M250"); }}
         ]
       );
@@ -317,7 +328,7 @@ function render(){
     case "SEG_MENU":
       setOptions(
         "Cable segments",
-        `Segments: ${state.segments.length}. Add in order (mixed cable OK).`,
+        `Segments: ${state.segments.length}. AT TAP: downstream run. UPSTREAM: run before current tap.`,
         [
           {label:"Add segment", sub:"pick cable + feet", onPick: ()=> setScreen("SEG_CABLE")},
           {label:"Done", sub:"go to inline taps", onPick: ()=> setScreen("INLINE_MENU")},
@@ -340,7 +351,7 @@ function render(){
 
     case "SEG_FEET":
       showNumber("Segment length (ft)", `Cable: ${temp.segCable}`, 100, (v)=>{
-        state.segments.push({ cable: temp.segCable, ft: Math.round(v) });
+        state.segments.push({ cable: temp.segCable, ft: v });
         setScreen("SEG_MENU");
       });
       break;
@@ -534,7 +545,7 @@ function startupSound(){
 // START function exposed for onclick fallback
 function startApp(e){
   if (e) e.preventDefault();
-  startupSound();
+  try { startupSound(); } catch {}
   boot.style.display = "none";
   resultsWrap.classList.add("hidden");
   render();
@@ -542,18 +553,20 @@ function startApp(e){
 window.__STARTAPP = startApp;
 
 // Listeners
-["touchend","click"].forEach(evt => bootBtn.addEventListener(evt, startApp, { passive:false }));
+bootBtn.addEventListener("click", startApp);
 
 numOk.addEventListener("click", (e)=>{
   e.preventDefault();
   const v = n(numInput.value, NaN);
   if (!Number.isFinite(v)) { alert("Enter a number."); return; }
+  if (["SEG_FEET", "CUR_TAP_THRU"].includes(screen) && v < 0) { alert("Length and loss must be zero or greater."); return; }
   const cb = pendingNumber;
+  if (!cb) return;
   pendingNumber = null;
   hideNumber();
   cb(v);
 });
-numCancel.addEventListener("click", (e)=>{ e.preventDefault(); hideNumber(); render(); });
+numCancel.addEventListener("click", (e)=>{ e.preventDefault(); hideNumber(); back(); });
 
 backBtn.addEventListener("click", (e)=>{ e.preventDefault(); back(); });
 showResults.addEventListener("click", (e)=>{ e.preventDefault(); showResultsNow(); });
