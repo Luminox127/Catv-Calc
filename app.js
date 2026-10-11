@@ -108,10 +108,11 @@ function load(){
     state.currentTapThru = loss(saved.currentTapThru) ? saved.currentTapThru : DEFAULT_TAP_THRU[state.currentTapValue];
     if (Array.isArray(saved.segments)) state.segments = saved.segments.filter(v => v && Object.hasOwn(LOSS_PER_100FT, v.cable) && loss(v.ft)).map(v => ({cable:v.cable, ft:v.ft}));
     if (Array.isArray(saved.inlineTaps)) state.inlineTaps = saved.inlineTaps.filter(v => v && ((ATX_TAPS[v.model] && !ATX_TAPS[v.model].terminal) || (TAP_VALUES.includes(v.value) && loss(v.thru)))).map(v => ATX_TAPS[v.model] && !ATX_TAPS[v.model].terminal ? {model:v.model,value:ATX_TAPS[v.model].value} : {value:v.value,thru:v.thru});
-    for (const key of ["internal", "field"]) if (Array.isArray(saved[key])) state[key] = saved[key].filter(v => v && typeof v.name === "string" && loss(v.loss)).map(v => ({name:v.name, loss:v.loss}));
+    for (const key of ["internal", "field"]) if (Array.isArray(saved[key])) state[key] = saved[key].filter(v => v && ((key === "field" && validPassive(v)) || (typeof v.name === "string" && loss(v.loss)))).map(v => key === "field" && validPassive(v) ? {model:v.model,path:v.path,name:passiveName(v)} : {name:v.name,loss:v.loss});
   } catch {}
 }
 function resetAll(){
+  window.resetTX?.();
   try { localStorage.removeItem(STORAGE_KEY); } catch {}
   state = defaultState();
   screen = "MODE";
@@ -166,7 +167,8 @@ function showNumber(title, hint, initial, onOk){
 function optButton(label, sub, onPick){
   const b = document.createElement("button");
   b.className = "opt";
-  b.innerHTML = `<div class="optTitle">${label}</div>${sub ? `<div class="optSub">${sub}</div>`:""}`;
+  const displayLabel = label.replace(/HIGH LOSS/g, '<span class="moreLoss">HIGH LOSS</span>');
+  b.innerHTML = `<div class="optTitle">${displayLabel}</div>${sub ? `<div class="optSub">${sub}</div>`:""}`;
   const handler = (e)=>{ e.preventDefault(); onPick(); };
   b.addEventListener("click", handler);
   return b;
@@ -254,8 +256,33 @@ function tapChoices(isCurrent){
     onPick:()=>{if(isCurrent){state.currentTapModel=key;state.currentTapValue=t.value;setScreen("DONE");}else{state.inlineTaps.push({model:key,value:t.value});setScreen("INLINE_MENU");}}
   }));
 }
-function totalDeviceLoss(list){
-  return list.reduce((s, d)=> s + (d.loss || 0), 0);
+function validPassive(d){
+  return Object.hasOwn(ATX_PASSIVES,d.model || "") && ["thru","tap"].includes(d.path) && ATX_PASSIVES[d.model][d.path][5][0] !== null;
+}
+function passiveName(d){
+  const spec=ATX_PASSIVES[d.model];
+  const hasUnequalPorts=spec.tap[5][0] !== null;
+  const port=hasUnequalPorts
+    ? (d.path === "tap" ? "HIGH LOSS · "+(d.model === "XSC-2-959" ? "high-loss output" : "coupled port") : "LESS LOSS · "+(d.model === "XSC-2-959" ? "low-loss output" : "THRU port"))
+    : (d.model === "XSI-2-20" ? "RF through path" : "any output · equal loss");
+  return spec.name+" · "+d.model+" · "+port;
+}
+function passiveLoss(d,freq){
+  if (!validPassive(d)) throw new Error("Invalid field device port");
+  const row=ATX_PASSIVES[d.model][d.path],index=state.tapBasis === "maximum" ? 1 : 0;
+  const points=Object.keys(row).map(Number).sort((a,b)=>a-b);
+  const lo=points.filter(f=>f<=freq).at(-1),hi=points.find(f=>f>=freq);
+  if(lo===undefined || hi===undefined)throw new Error("Field device frequency outside specifications");
+  return lo===hi ? row[lo][index] : row[lo][index]+(row[hi][index]-row[lo][index])*(freq-lo)/(hi-lo);
+}
+function totalDeviceLoss(list,freq){
+  return list.reduce((sum,d)=>sum+(d.model ? passiveLoss(d,freq) : (d.loss || 0)),0);
+}
+function fieldChoices(){
+  return Object.entries(ATX_PASSIVES).flatMap(([model,spec])=>["thru","tap"].filter(path=>spec[path][5][0] !== null).map(path=>{
+    const d={model,path};
+    return {label:passiveName(d),sub:"Loss "+f2(passiveLoss(d,250))+" / "+f2(passiveLoss(d,1000))+" dB (250 / 1000 MHz)",onPick:()=>{state.field.push({...d,name:passiveName(d)});setScreen("FIELD_MENU");}};
+  }));
 }
 
 function computeFor(freq){
@@ -263,8 +290,8 @@ function computeFor(freq){
 
   const cab = totalCableLoss(freq);
   const inlineThru = totalInlineThruLoss(freq);
-  const internal = totalDeviceLoss(state.internal);
-  const field = totalDeviceLoss(state.field);
+  const internal = totalDeviceLoss(state.internal,freq);
+  const field = totalDeviceLoss(state.field,freq);
 
   const levelAtTapIn = start - cab - inlineThru - internal - field;
 
@@ -311,6 +338,7 @@ Cable loss:         -${f2(r.cab)} dB
 Inline THRU total:  -${f2(r.inlineThru)} dB
 Internal total:     -${f2(r.internal)} dB
 Field total:        -${f2(r.field)} dB
+${state.field.map((d,i)=>"  "+(i+1)+") "+(d.model ? passiveName(d) : d.name+" (generic)")+": -"+f2(d.model ? passiveLoss(d,r.freq) : d.loss)+" dB").join("\n")}
 
 Level @ tap IN:     ${f2(r.levelAtTapIn)} dBmV
 TAP PORT OUT:       ${f2(r.tapPort)} dBmV  (tap -${f2(r.tapLoss)})
@@ -335,6 +363,7 @@ function showResultsNow(){
   document.getElementById("tapPortLow").textContent = f2(low.tapPort) + " dBmV";
   document.getElementById("tapPortHigh").textContent = f2(high.tapPort) + " dBmV";
   resultsWrap.classList.remove("hidden");
+  window.updateTX?.();
 }
 
 // --------- Wizard screens ----------
@@ -364,8 +393,8 @@ function render(){
       break;
 
     case "TAP_BASIS":
-      setOptions("ATX tap loss basis", "Typical predicts normal performance; maximum uses the published upper loss limits. Cable/device presets are unchanged.",
-        ["typical","maximum"].map(b=>({label:b === "typical" ? "Typical loss" : "Maximum loss",sub:"Applies to all selected ATX taps",onPick:()=>{state.tapBasis=b;setScreen("SEG_MENU");}})));
+      setOptions("ATX tap / field-device loss basis", "Typical predicts normal performance; maximum uses the published upper loss limits. Cable and generic device presets are unchanged.",
+        ["typical","maximum"].map(b=>({label:b === "typical" ? "Typical loss" : "Maximum loss",sub:"Applies to selected ATX taps and field devices",onPick:()=>{state.tapBasis=b;setScreen("SEG_MENU");}})));
       break;
     case "INLINE_FAMILY": pickTapFamily(false); break;
     case "CUR_TAP_FAMILY": pickTapFamily(true); break;
@@ -445,7 +474,7 @@ function render(){
         "Field devices",
         `Field items: ${state.field.length}`,
         [
-          {label:"Add field device", sub:"splitters / DC", onPick: ()=> setScreen("FIELD_ADD")},
+          {label:"Add field device", sub:"ATX splitters / DC / power inserter", onPick: ()=> setScreen("FIELD_ADD")},
           {label:"Done", sub:"current tap", onPick: ()=> setScreen("CUR_TAP_FAMILY")},
           {label:"Clear field", sub:"remove field stack", onPick: ()=>{ state.field=[]; render(); }}
         ]
@@ -453,15 +482,11 @@ function render(){
       break;
 
     case "FIELD_ADD":
-      setOptions(
-        "Add field device",
-        "Tap a device to add it.",
-        FIELD_DEVICES.map(d => ({
-          label: d.name,
-          sub: `-${f2(d.loss)} dB`,
-          onPick: ()=>{ state.field.push({...d}); setScreen("FIELD_MENU"); }
-        })).concat([{label:"Back", sub:"", onPick: ()=> back()}])
-      );
+      setOptions("Add ATX field device", "Pick LESS LOSS or HIGH LOSS for the leg feeding your tap. Balanced splitters have equal-loss outputs.",
+        fieldChoices().concat([{label:"Other hardware / generic presets",sub:"Previous fixed loss choices",onPick:()=>setScreen("FIELD_GENERIC")}])) ;
+      break;
+    case "FIELD_GENERIC":
+      setOptions("Generic field devices", "These fixed presets are not ATX manufacturer specifications.", FIELD_DEVICES.map(d=>({label:d.name,sub:"-"+f2(d.loss)+" dB",onPick:()=>{state.field.push({...d});setScreen("FIELD_MENU");}})));
       break;
 
     case "CUR_TAP_VALUE":

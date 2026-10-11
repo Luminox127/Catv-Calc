@@ -3,13 +3,14 @@ const vm = require('vm');
 const assert = require('assert/strict');
 const elements = new Map();
 const el = id => {
-  if (!elements.has(id)) elements.set(id, {value:'', textContent:'', style:{}, classList:{add(){},remove(){}}, handlers:{}, addEventListener(k, f){this.handlers[k]=f;}, appendChild(){}, focus(){}});
+  if (!elements.has(id)) elements.set(id, {value:'', textContent:'', style:{}, classList:{add(){},remove(){},toggle(){}}, handlers:{}, addEventListener(k, f){this.handlers[k]=f;}, appendChild(){}, focus(){},reset(){}});
   return elements.get(id);
 };
 let stored = null;
 let unavailable = false;
 const context = vm.createContext({console, window:{addEventListener(){}}, document:{getElementById:el,createElement:()=>el(Math.random())}, localStorage:{getItem(){if(unavailable)throw Error();return stored;},setItem(){if(unavailable)throw Error();},removeItem(){if(unavailable)throw Error();}}, setTimeout(){},setInterval(){}, alert(){},confirm:()=>true});
 vm.runInContext(fs.readFileSync(__dirname+'/atx-data.js','utf8'), context);
+vm.runInContext(fs.readFileSync(__dirname+'/passive-data.js','utf8'), context);
 vm.runInContext(fs.readFileSync(__dirname+'/app.js','utf8'), context);
 const run = code => vm.runInContext(code, context);
 const near = (actual, expected) => assert.ok(Math.abs(actual-expected)<1e-9, `${actual} != ${expected}`);

@@ -8,7 +8,7 @@ The 24 manufacturer models have separate frequency-dependent IN-TAP and IN-OUT l
 
 Terminating models: 2-port 5 dB, 4-port 8 dB, and 8-port 11 dB. They have no OUT port. The app permits them as the current/end tap, shows N/A for THRU, and excludes them from inline choices.
 
-Cable attenuation and splitter/DC presets are unchanged; this document does not provide replacements for them. No upstream TX calculation was added.
+Cable attenuation and splitter/DC presets are unchanged; this document does not provide replacements for them. Expected upstream TX estimates are now available; see TX-README.md for the baseline, return-loss assumptions and OFDMA reference limits.
 
 The datasheet also lists tap cable simulators/equalizers. Their effect requires knowing which plug-in is installed and its signal path; they are not automatically applied. These calculations represent taps without an added conditioner loss. Return loss and isolation ratings are not path attenuation and are not subtracted from signal levels.
 

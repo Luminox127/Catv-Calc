@@ -13,11 +13,19 @@
   <title>CATV Calc</title>
 
   <!-- Cache-bust -->
-  <link rel="stylesheet" href="style.css?v=20261010tapout1" />
+  <link rel="stylesheet" href="style.css?v=20261010loginclip9" />
 </head>
 
 <body>
-  <section id="loginGate" class="loginGate" aria-label="FVG Industries login">
+  <section id="startScreen" class="loadingScreen" aria-label="Start CATV Calc">
+    <div class="loadingCard">
+      <div class="loadingBrand">FVG INDUSTRIES™</div>
+      <div class="loadingTitle">CATV Calc</div>
+      <button id="startLoading" class="btn primary big" type="button">Start</button>
+    </div>
+  </section>
+<section id="loadingScreen" class="loadingScreen" hidden aria-label="Loading CATV Calc" role="status"><div class="loadingCard"><div class="loadingBrand">FVG INDUSTRIES™</div><div class="loadingTitle">CATV Calc</div><div class="loadingSpinner" aria-hidden="true"></div><p>Loading calculator…</p><audio id="loadingAudio" src="audio/loading.mp3" preload="auto" hidden></audio><div class="loadingTrack" aria-hidden="true"><div class="loadingProgress"></div></div></div></section>
+  <section id="loginGate" class="loginGate" hidden inert aria-label="FVG Industries login">
     <div class="loginCard">
       <div class="loginEyebrow">FVG INDUSTRIES™</div>
       <h1>Welcome back</h1>
@@ -31,6 +39,7 @@
       <div class="loginFooter">CATV Calc · Dual-band signal calculator</div>
     </div>
   </section>
+  <audio id="loginAudio" src="audio/login.mp3" preload="auto" hidden></audio>
   <div id="calculatorContent" hidden inert>
 
   <header class="topbar">
@@ -116,13 +125,28 @@
           <pre id="resHigh" class="mono"></pre>
         </div>
       </div>
+      <section class="txCard" aria-labelledby="txTitle">
+        <h2 id="txTitle">EXPECTED TX AT TAP</h2>
+        <p class="txHint">Meter connected directly to the tap port. Amp test-point TX applies to all six channels.</p>
+        <div class="txControls">
+          <label>Amp DOCSIS TX at test point (dBmV)<input id="txBaseline" type="number" step="any" value="34" inputmode="decimal"></label>
+          <label>Total return splitter/DC loss (dB)<input id="txDevices" type="number" step="any" min="0" placeholder="Override all device losses" inputmode="decimal"></label>
+        </div>
+        <label class="txCheck"><input id="txGeneric" type="checkbox"> Allow generic tap and flat splitter/DC estimates</label>
+        <pre id="txOutput" class="mono" role="status" aria-live="polite"></pre>
+        <p class="txHint">Estimate = amp test-point TX − 20 dB + return cable, inline THRU, device and current tap losses. Assumes FWD OUT / REV INJ with meter compensation OFF. Cable losses are interpolated manufacturer presets at 20°C. ATX taps and field devices use your Typical/Maximum selection. A return device total overrides all internal and field device losses for TX only.</p>
+        <p class="txHint">OFDMA ranges show variation in passive path loss across the band, using the same power reference as your amp baseline. They do not convert between total OFDMA power, per-subcarrier power or power spectral density. Added return pads/conditioners must be included in the return device total.</p>
+      </section>
     </section>
   </main>
 
   </div>
-  <script src="atx-data.js?v=20261010tapout1"></script>
-  <script src="app.js?v=20261010tapout1"></script>
-  <script src="login.js?v=20261010tapout1"></script>
+  <script src="atx-data.js?v=20261010loginclip9"></script>
+  <script src="passive-data.js?v=20261010loginclip9"></script>
+  <script src="app.js?v=20261010loginclip9"></script>
+  <script src="tx.js?v=20261010loginclip9"></script>
+  <script src="login.js?v=20261010loginclip9"></script>
+  <script src="loading.js?v=20261010loginclip9"></script>
 </body>
 </html>
 

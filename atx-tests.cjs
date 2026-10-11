@@ -1,10 +1,10 @@
 require('./tests.cjs');
 const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
 const elements=new Map();
-const el=id=>{if(!elements.has(id))elements.set(id,{value:'',textContent:'',style:{},classList:{add(){},remove(){}},addEventListener(){},appendChild(){},focus(){}});return elements.get(id);};
+const el=id=>{if(!elements.has(id))elements.set(id,{value:'',textContent:'',style:{},classList:{add(){},remove(){},toggle(){}},addEventListener(){},appendChild(){},focus(){},reset(){}});return elements.get(id);};
 let saved=null;
 const ctx=vm.createContext({console,window:{addEventListener(){}},document:{getElementById:el,createElement:()=>({addEventListener(){}})},localStorage:{getItem:()=>saved,setItem(){}},setTimeout(){},alert(){}});
-vm.runInContext(fs.readFileSync(__dirname+'/atx-data.js','utf8')+fs.readFileSync(__dirname+'/app.js','utf8'),ctx);
+vm.runInContext(fs.readFileSync(__dirname+'/atx-data.js','utf8')+fs.readFileSync(__dirname+'/passive-data.js','utf8')+fs.readFileSync(__dirname+'/app.js','utf8'),ctx);
 const run=s=>vm.runInContext(s,ctx),near=(a,b)=>assert.ok(Math.abs(a-b)<1e-9,`${a} != ${b}`);
 near(run('atxLoss("4:11","thru",258)'),3.4);
 near(run('atxLoss("4:11","thru",250)'),3.3+.1*46/54);

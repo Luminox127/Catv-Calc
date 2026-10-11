@@ -5,33 +5,23 @@
   const input = document.getElementById('loginPassword');
   const message = document.getElementById('loginMessage');
   const content = document.getElementById('calculatorContent');
-  const speech = window.speechSynthesis;
-  let welcome;
+  const loginSound = document.getElementById('loginAudio');
   function playWelcome() {
-    if (!speech || typeof SpeechSynthesisUtterance === 'undefined') return;
-    speech.cancel();
-    const voices = speech.getVoices();
-    welcome = new SpeechSynthesisUtterance('Welcome.');
-    const english = voices.filter(v => /^en(?:-|$)/i.test(v.lang));
-    // Browser voices have no standard gender field; prefer known female voices.
-    welcome.voice = english.find(v => /Zira|Samantha|Victoria|Karen|Moira|Tessa|Serena|Susan|Hazel|Aria|Jenny|Sonia|Libby|Natasha|female/i.test(v.name))
-      || english.find(v => /Google US English/i.test(v.name)) || english[0] || null;
-    welcome.lang = welcome.voice?.lang || 'en-US';
-    welcome.rate = 0.95;
-    welcome.pitch = 1;
-    welcome.volume = 0.8;
-    welcome.onerror = () => {};
-    speech.speak(welcome);
+    loginSound.pause();
+    loginSound.currentTime = 0;
+    const playing = loginSound.play();
+    if (playing && typeof playing.catch === 'function') playing.catch(() => {});
   }
-  // Request voices early; some browsers populate the list asynchronously.
-  if (speech) speech.getVoices();
   function lock() {
     content.hidden = true;
     content.inert = true;
-    gate.hidden = false;
+    const loading = document.getElementById('loadingScreen');
+    const startScreen = document.getElementById('startScreen');
+    gate.hidden = (!!loading && !loading.hidden) || (!!startScreen && !startScreen.hidden);
+    gate.inert = gate.hidden;
     form.reset();
     message.textContent = '';
-    input.focus();
+    if (!gate.hidden) input.focus();
   }
   form.addEventListener('submit', event => {
     event.preventDefault();
@@ -52,7 +42,8 @@
     document.getElementById('qTitle').focus();
   });
   document.getElementById('logoutBtn').addEventListener('click', () => {
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    loginSound.pause();
+    loginSound.currentTime = 0;
     lock();
   });
   lock();
